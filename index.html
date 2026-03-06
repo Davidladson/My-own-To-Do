@@ -262,6 +262,7 @@
   .detail-btn-toggle { background: var(--green); color: #000; }
   .detail-btn-toggle.undo { background: var(--orange); color: #000; }
   .detail-btn-edit { background: var(--accent); color: #fff; }
+  .detail-btn-delete { background: rgba(248,113,113,0.15); color: var(--red); flex: 0.5; }
 
   /* History styles */
   .history-card {
@@ -1121,6 +1122,9 @@ async function initApp() {
 
   // Start reminder checker
   startReminderChecker();
+
+  // Init workspace folder auto-sync (desktop only)
+  initWorkspaceSync();
 }
 
 function save() {
@@ -1653,8 +1657,23 @@ function renderSync() {
       <div class="sync-status" id="copyStatus">Copied to clipboard!</div>
     </div>
     <div class="sync-card">
-      <h3>Import from Claude</h3>
-      <p>Import tasks from a TASKS.md file that Claude Cowork has updated with new assignments.</p>
+      <h3>Auto-Sync from Claude</h3>
+      <p>Connect your "Ladson with Malveon" folder once. The app will check for new tasks from Claude every 5 minutes automatically.</p>
+      ${workspaceDirHandle
+        ? `<div style="display:flex;gap:8px;flex-direction:column">
+            <button class="sync-btn primary" onclick="manualSyncFromWorkspace()">Sync Now</button>
+            <button class="sync-btn tertiary" onclick="disconnectWorkspace()" style="color:var(--red)">Disconnect Folder</button>
+           </div>
+           <div class="sync-status" id="workspaceStatus" style="display:none">Synced!</div>
+           <p style="margin-top:8px;font-size:12px;color:var(--green)">Folder connected. Checks every 5 minutes.</p>`
+        : `<button class="sync-btn secondary" onclick="connectWorkspaceFolder()">Connect Workspace Folder</button>
+           <div class="sync-status" id="workspaceStatus" style="display:none">Connected!</div>
+           <p style="margin-top:8px;font-size:12px;color:var(--text-dim)">Works on Chrome/Edge desktop. On mobile, use Import below.</p>`
+      }
+    </div>
+    <div class="sync-card">
+      <h3>Import from Claude (Manual)</h3>
+      <p>Pick the TASKS.md file manually to import tasks Claude has added. Use this on mobile.</p>
       <input type="file" id="importFileInput" accept=".md" style="display:none" onchange="handleImportFile(event)">
       <button class="sync-btn tertiary" onclick="document.getElementById('importFileInput').click()">Import from TASKS.md</button>
       <div class="sync-status" id="importStatus">Tasks imported!</div>
@@ -2045,6 +2064,7 @@ function openTaskDetail(id) {
         ${t.done ? 'Mark Undone' : 'Mark Done'}
       </button>
       <button class="detail-btn-edit" onclick="closeTaskDetail();editTask(event,'${t.id}')">Edit</button>
+      <button class="detail-btn-delete" onclick="deleteFromDetail('${t.id}')">Delete</button>
     </div>`;
 
   panel.innerHTML = html;
@@ -2053,6 +2073,14 @@ function openTaskDetail(id) {
 
 function closeTaskDetail() {
   document.getElementById('detailOverlay').classList.remove('open');
+}
+
+function deleteFromDetail(id) {
+  if (confirm('Delete this task? This cannot be undone.')) {
+    tasks = tasks.filter(t => t.id !== id);
+    deleteTaskFromSupabase(id);
+    save(); closeTaskDetail(); renderTabs(); renderView(); updateProgress();
+  }
 }
 
 function toggleFromDetail(id) {
@@ -2570,6 +2598,150 @@ function parseTasksMd(content) {
     }
   }
   return parsed;
+}
+
+// ===================== WORKSPACE AUTO-SYNC (File System Access API) =====================
+let workspaceDirHandle = null;
+let autoImportInterval = null;
+
+// IndexedDB helpers for storing the directory handle across sessions
+function openFsDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('malveon-fs', 1);
+    req.onupgradeneeded = e => e.target.result.createObjectStore('handles');
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror = reject;
+  });
+}
+
+async function saveDirHandle(handle) {
+  const db = await openFsDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('handles', 'readwrite');
+    tx.objectStore('handles').put(handle, 'workspace');
+    tx.oncomplete = resolve;
+    tx.onerror = reject;
+  });
+}
+
+async function loadDirHandle() {
+  try {
+    const db = await openFsDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('handles', 'readonly');
+      const req = tx.objectStore('handles').get('workspace');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = reject;
+    });
+  } catch(e) { return null; }
+}
+
+async function connectWorkspaceFolder() {
+  if (!('showDirectoryPicker' in window)) {
+    alert('Auto-sync requires Chrome or Edge on desktop. On mobile, use the "Import from TASKS.md" button instead.');
+    return;
+  }
+  try {
+    const handle = await window.showDirectoryPicker({ mode: 'read' });
+    await saveDirHandle(handle);
+    workspaceDirHandle = handle;
+    const count = await autoImportFromWorkspace(handle);
+    startAutoImport();
+    renderSync();
+    const statusEl = document.getElementById('workspaceStatus');
+    if (statusEl) {
+      statusEl.textContent = count > 0 ? `Connected! ${count} new tasks imported.` : 'Connected! Up to date.';
+      statusEl.style.display = 'block';
+      setTimeout(() => statusEl.style.display = 'none', 4000);
+    }
+  } catch(e) {
+    if (e.name !== 'AbortError') alert('Could not connect to folder: ' + e.message);
+  }
+}
+
+async function autoImportFromWorkspace(handle) {
+  try {
+    const fileHandle = await handle.getFileHandle('TASKS.md');
+    const file = await fileHandle.getFile();
+    const content = await file.text();
+    const parsed = parseTasksMd(content);
+    if (parsed.length === 0) return 0;
+
+    const existingTexts = tasks.map(t => t.text.toLowerCase().trim());
+    const newTasks = parsed.filter(p =>
+      !existingTexts.includes(p.text.toLowerCase().trim()) && p.cat !== 'done'
+    );
+
+    if (newTasks.length > 0) {
+      newTasks.forEach(p => {
+        const newTask = {
+          id: uid(), text: p.text, cat: p.cat, priority: p.priority,
+          done: false, notes: '', daily: p.daily,
+          subtasks: [], streak: 0, lastStreakDate: null,
+          updatedAt: new Date().toISOString()
+        };
+        tasks.push(newTask);
+        pushTaskToSupabase(newTask);
+      });
+      save(); renderTabs(); renderView(); updateProgress();
+    }
+    return newTasks.length;
+  } catch(e) {
+    console.log('Auto-import error:', e.message);
+    return 0;
+  }
+}
+
+function startAutoImport() {
+  if (autoImportInterval) clearInterval(autoImportInterval);
+  autoImportInterval = setInterval(async () => {
+    if (!workspaceDirHandle) return;
+    const perm = await workspaceDirHandle.queryPermission({ mode: 'read' });
+    if (perm === 'granted') await autoImportFromWorkspace(workspaceDirHandle);
+  }, 5 * 60 * 1000); // every 5 minutes
+}
+
+async function manualSyncFromWorkspace() {
+  if (!workspaceDirHandle) { await connectWorkspaceFolder(); return; }
+  try {
+    let perm = await workspaceDirHandle.queryPermission({ mode: 'read' });
+    if (perm === 'prompt') perm = await workspaceDirHandle.requestPermission({ mode: 'read' });
+    if (perm !== 'granted') { alert('Permission denied. Please reconnect the folder.'); return; }
+    const count = await autoImportFromWorkspace(workspaceDirHandle);
+    const statusEl = document.getElementById('workspaceStatus');
+    if (statusEl) {
+      statusEl.textContent = count > 0 ? `${count} new tasks imported!` : 'Up to date - no new tasks.';
+      statusEl.style.display = 'block';
+      setTimeout(() => statusEl.style.display = 'none', 3000);
+    }
+    renderSync();
+  } catch(e) { alert('Sync failed: ' + e.message); }
+}
+
+async function disconnectWorkspace() {
+  workspaceDirHandle = null;
+  if (autoImportInterval) { clearInterval(autoImportInterval); autoImportInterval = null; }
+  const db = await openFsDb();
+  const tx = db.transaction('handles', 'readwrite');
+  tx.objectStore('handles').delete('workspace');
+  renderSync();
+}
+
+async function initWorkspaceSync() {
+  if (!('showDirectoryPicker' in window)) return;
+  try {
+    const handle = await loadDirHandle();
+    if (!handle) return;
+    const perm = await handle.queryPermission({ mode: 'read' });
+    if (perm === 'granted') {
+      workspaceDirHandle = handle;
+      startAutoImport();
+      // Silent import on load
+      await autoImportFromWorkspace(handle);
+    } else if (perm === 'prompt') {
+      workspaceDirHandle = handle; // store but don't auto-prompt
+    }
+  } catch(e) { console.log('Workspace sync init:', e.message); }
 }
 
 // ===================== PWA INSTALL =====================

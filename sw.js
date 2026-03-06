@@ -1,6 +1,6 @@
-const CACHE_NAME = 'malveon-tasks-v2';
+const CACHE_NAME = 'malveon-tasks-v3';
 const ASSETS = [
-  './index.html',
+  './malveon-tasks.html',
   './manifest.json',
   './malveon-icon-192.png',
   './malveon-icon-512.png'
@@ -25,5 +25,39 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   e.respondWith(
     caches.match(e.request).then(r => r || fetch(e.request))
+  );
+});
+
+// Handle notification messages sent from the app (mobile fallback)
+self.addEventListener('message', e => {
+  if (e.data && e.data.type === 'SHOW_NOTIFICATION') {
+    const title = e.data.title || 'Malveon Tasks';
+    const body = e.data.body || '';
+    e.waitUntil(
+      self.registration.showNotification(title, {
+        body: body,
+        icon: './malveon-icon-192.png',
+        badge: './malveon-icon-192.png',
+        tag: 'malveon-' + Date.now(),
+        requireInteraction: false
+      })
+    );
+  }
+});
+
+// Open the app when a notification is clicked
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+      for (const client of clientList) {
+        if (client.url.includes('malveon-tasks') && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      if (clients.openWindow) {
+        return clients.openWindow('./malveon-tasks.html');
+      }
+    })
   );
 });
