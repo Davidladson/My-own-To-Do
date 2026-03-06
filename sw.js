@@ -1,6 +1,7 @@
-const CACHE_NAME = 'malveon-tasks-v3';
+const CACHE_NAME = 'malveon-tasks-v4';
 const ASSETS = [
-  './malveon-tasks.html',
+  './',
+  './index.html',
   './manifest.json',
   './malveon-icon-192.png',
   './malveon-icon-512.png'
@@ -51,12 +52,12 @@ self.addEventListener('notificationclick', e => {
   e.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
       for (const client of clientList) {
-        if (client.url.includes('malveon-tasks') && 'focus' in client) {
+        if ((client.url.includes('malveon-tasks') || client.url.includes('index.html') || client.url.endsWith('/')) && 'focus' in client) {
           return client.focus();
         }
       }
       if (clients.openWindow) {
-        return clients.openWindow('./malveon-tasks.html');
+        return clients.openWindow('./');
       }
     })
   );
