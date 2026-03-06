@@ -650,14 +650,18 @@ const defaultTasks = [
   { id: uid(), text: "Draft Malveon one-liner and test with 3 people", cat: "this-week", priority: "medium", done: false, notes: "" },
   { id: uid(), text: "Practice mock discovery call with Kavin", cat: "this-week", priority: "medium", done: false, notes: "" },
   { id: uid(), text: "Read 2 competitor product pages and note features", cat: "this-week", priority: "low", done: false, notes: "" },
-  { id: uid(), text: "FRIDAY: Weekly review and self-feedback", cat: "this-week", priority: "high", done: false, notes: "1. Wins (what shipped)\n2. Failures (what missed, why)\n3. Outreach numbers\n4. Health check\n5. Top 3 next week\n6. Stop doing one thing\n7. Start doing one thing\n8. Rate week /10 + write 1 paragraph self-feedback" },
-  { id: uid(), text: "FRIDAY: Review outreach tracker and update pipeline", cat: "this-week", priority: "medium", done: false, notes: "" },
+  { id: uid(), text: "Weekly review and self-feedback", cat: "this-week", priority: "high", done: false, notes: "1. Wins (what shipped)\n2. Failures (what missed, why)\n3. Outreach numbers\n4. Health check\n5. Top 3 next week\n6. Stop doing one thing\n7. Start doing one thing\n8. Rate week /10 + write 1 paragraph self-feedback" },
+  { id: uid(), text: "Review outreach tracker and update pipeline", cat: "this-week", priority: "medium", done: false, notes: "" },
 
   { id: uid(), text: "Create Malveon demo walkthrough", cat: "before-pilot", priority: "high", done: false, notes: "" },
-  { id: uid(), text: "Draft pilot agreement (simple 1-page)", cat: "before-pilot", priority: "medium", done: false, notes: "" },
+  { id: uid(), text: "Pilot agreement template", cat: "before-pilot", priority: "high", done: false, notes: "$99/mo, 30-day, cancellation terms (simple 1-page)" },
   { id: uid(), text: "Set up payment method (Stripe or Razorpay)", cat: "before-pilot", priority: "medium", done: false, notes: "" },
   { id: uid(), text: "Define pilot success metrics", cat: "before-pilot", priority: "medium", done: false, notes: "" },
-  { id: uid(), text: "Register business entity if needed", cat: "before-pilot", priority: "low", done: false, notes: "" },
+  { id: uid(), text: "Founders Agreement with Kavin", cat: "before-pilot", priority: "high", done: false, notes: "" },
+  { id: uid(), text: "Incorporate Malveon", cat: "before-pilot", priority: "high", done: false, notes: "Talk to a CA. Covers entity registration." },
+  { id: uid(), text: "IP Assignment Agreement", cat: "before-pilot", priority: "medium", done: false, notes: "" },
+  { id: uid(), text: "Basic Terms of Service", cat: "before-pilot", priority: "medium", done: false, notes: "" },
+  { id: uid(), text: "Basic Privacy Policy", cat: "before-pilot", priority: "medium", done: false, notes: "" },
 
   { id: uid(), text: "Kavin: demo build timeline confirmation", cat: "waiting", priority: "high", done: false, notes: "" },
 
@@ -1670,6 +1674,12 @@ function renderSync() {
            <div class="sync-status" id="workspaceStatus" style="display:none">Connected!</div>
            <p style="margin-top:8px;font-size:12px;color:var(--text-dim)">Works on Chrome/Edge desktop. On mobile, use Import below.</p>`
       }
+    </div>
+    <div class="sync-card">
+      <h3>Remove Duplicates</h3>
+      <p>Finds tasks with the same name and removes the extra copies. Keeps completed tasks over pending ones.</p>
+      <button class="sync-btn tertiary" onclick="removeDuplicateTasks()" style="color:var(--red)">Remove Duplicates</button>
+      <div class="sync-status" id="dedupeStatus" style="display:none">Done!</div>
     </div>
     <div class="sync-card">
       <h3>Import from Claude (Manual)</h3>
@@ -2716,6 +2726,50 @@ async function manualSyncFromWorkspace() {
     }
     renderSync();
   } catch(e) { alert('Sync failed: ' + e.message); }
+}
+
+function removeDuplicateTasks() {
+  const seen = new Map();
+  const toDelete = [];
+
+  // Group by normalized text (lowercase, trimmed)
+  tasks.forEach(t => {
+    const key = t.text.toLowerCase().trim();
+    if (seen.has(key)) {
+      // Keep the one that is done, or the earlier one — delete this one
+      const existing = seen.get(key);
+      if (!existing.done && t.done) {
+        // This one is done, swap — delete the existing one instead
+        toDelete.push(existing.id);
+        seen.set(key, t);
+      } else {
+        toDelete.push(t.id);
+      }
+    } else {
+      seen.set(key, t);
+    }
+  });
+
+  if (toDelete.length === 0) {
+    alert('No duplicates found. All tasks have unique names.');
+    return;
+  }
+
+  if (!confirm(`Found ${toDelete.length} duplicate task${toDelete.length > 1 ? 's' : ''}. Remove them?`)) return;
+
+  toDelete.forEach(id => {
+    tasks = tasks.filter(t => t.id !== id);
+    deleteTaskFromSupabase(id);
+  });
+
+  save(); renderTabs(); renderView(); updateProgress();
+
+  const statusEl = document.getElementById('dedupeStatus');
+  if (statusEl) {
+    statusEl.textContent = `Removed ${toDelete.length} duplicate${toDelete.length > 1 ? 's' : ''}.`;
+    statusEl.style.display = 'block';
+    setTimeout(() => statusEl.style.display = 'none', 3000);
+  }
 }
 
 async function disconnectWorkspace() {
