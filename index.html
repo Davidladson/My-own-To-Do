@@ -1778,6 +1778,18 @@
       }
     }
 
+    function sanitizeTaskText(text) {
+      if (!text) return text;
+      let clean = text;
+      const prioMatch = clean.match(/\|\s*priority:\s*(low|medium|high)/i);
+      if (prioMatch) clean = clean.replace(prioMatch[0], '').trim();
+      const dailyMatch = clean.match(/\|\s*daily:\s*(true|false)/i);
+      if (dailyMatch) clean = clean.replace(dailyMatch[0], '').trim();
+      clean = clean.replace(/\|\s*$/, '').trim();
+      clean = clean.replace(/^\*{1,2}|\*{1,2}$/g, '').replace(/^~~|~~$/g, '').trim();
+      return clean;
+    }
+
     async function deleteTaskFromSupabase(id) {
       if (!currentUser || !sb) return;
       if (navigator.onLine) {
@@ -1810,6 +1822,15 @@
         const { data: remoteTasks, error: tErr } = await sb.from('tasks')
           .select('*').eq('user_id', currentUser.id);
         if (!tErr && remoteTasks) {
+          remoteTasks.forEach(r => {
+            if (r.text) {
+              const cleanText = sanitizeTaskText(r.text);
+              if (cleanText !== r.text) {
+                r.text = cleanText;
+                sb.from('tasks').update({ text: cleanText }).eq('id', r.id).then();
+              }
+            }
+          });
           const localMap = {};
           tasks.forEach(t => { localMap[t.id] = t; });
 
@@ -1958,6 +1979,7 @@
           (payload) => {
             if (isSyncing) return; // ignore during full sync
             if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+              if (payload.new && payload.new.text) payload.new.text = sanitizeTaskText(payload.new.text);
               const remote = rowToTask(payload.new);
               const idx = tasks.findIndex(t => t.id === remote.id);
               if (idx >= 0) {
@@ -2024,31 +2046,22 @@
         let migrated = false;
         tasks.forEach(t => {
           let originalText = t.text;
-
-          const prioMatch = t.text.match(/\|\s*priority:\s*(low|medium|high)/i);
-          if (prioMatch) {
-            t.text = t.text.replace(prioMatch[0], '').trim();
-          }
-          const dailyMatch = t.text.match(/\|\s*daily:\s*(true|false)/i);
-          if (dailyMatch) {
-            t.text = t.text.replace(dailyMatch[0], '').trim();
-          }
-
-          t.text = t.text.replace(/\|\s*$/, '').trim();
-          t.text = t.text.replace(/^\*{1,2}|\*{1,2}$/g, '').replace(/^~~|~~$/g, '').trim();
+          t.text = sanitizeTaskText(t.text);
 
           if (t.text !== originalText) {
             t.updatedAt = new Date().toISOString();
+            t._needsMigrationPush = true;
             migrated = true;
           }
         });
 
         if (migrated) {
           save(); // Save cleaned tasks back to local storage
-          // Because we push them during `syncFromSupabase` later implicitly if they are marked newer, 
-          // or we can explicitly push them right now:
           if (currentUser && sb) {
-            tasks.filter(t => t.updatedAt === new Date().toISOString()).forEach(t => pushTaskToSupabase(t));
+            tasks.filter(t => t._needsMigrationPush).forEach(t => {
+              delete t._needsMigrationPush;
+              pushTaskToSupabase(t);
+            });
           }
         }
 
