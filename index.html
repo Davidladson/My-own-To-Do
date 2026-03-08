@@ -1486,6 +1486,7 @@
         <label>Type</label>
         <select id="resourceTypeInput">
           <option value="outreach-plan">Outreach Plan</option>
+          <option value="ops">Operations</option>
           <option value="positioning">Positioning</option>
           <option value="playbook">Playbook</option>
           <option value="reference">Reference</option>
@@ -2018,6 +2019,39 @@
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         tasks = JSON.parse(saved);
+
+        // Silent Migration: Clean up any tasks loaded that were corrupted with Claude | priority tags previously
+        let migrated = false;
+        tasks.forEach(t => {
+          let originalText = t.text;
+
+          const prioMatch = t.text.match(/\|\s*priority:\s*(low|medium|high)/i);
+          if (prioMatch) {
+            t.text = t.text.replace(prioMatch[0], '').trim();
+          }
+          const dailyMatch = t.text.match(/\|\s*daily:\s*(true|false)/i);
+          if (dailyMatch) {
+            t.text = t.text.replace(dailyMatch[0], '').trim();
+          }
+
+          t.text = t.text.replace(/\|\s*$/, '').trim();
+          t.text = t.text.replace(/^\*{1,2}|\*{1,2}$/g, '').replace(/^~~|~~$/g, '').trim();
+
+          if (t.text !== originalText) {
+            t.updatedAt = new Date().toISOString();
+            migrated = true;
+          }
+        });
+
+        if (migrated) {
+          save(); // Save cleaned tasks back to local storage
+          // Because we push them during `syncFromSupabase` later implicitly if they are marked newer, 
+          // or we can explicitly push them right now:
+          if (currentUser && sb) {
+            tasks.filter(t => t.updatedAt === new Date().toISOString()).forEach(t => pushTaskToSupabase(t));
+          }
+        }
+
       } else if (currentUser && sb) {
         // Signed in but no local data: start empty and let syncFromSupabase pull tasks
         tasks = [];
@@ -3366,6 +3400,7 @@
 
       const typeLabels = {
         'outreach-plan': 'Outreach',
+        'ops': 'Operations',
         'positioning': 'Positioning',
         'playbook': 'Playbook',
         'reference': 'Reference'
@@ -3501,7 +3536,13 @@
       el.style.display = 'block';
 
       const reminders = loadReminderSettings();
-      const hasFsSupport = ('showDirectoryPicker' in window);
+
+      // Determine if we show the Desktop-only Claude integration section.
+      // We check for native File Access API support AND ensure the user isn't on a mobile device,
+      // because mobile PWAs don't need local workspace folder connections.
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      const isSmallScreen = window.innerWidth <= 768;
+      const hasFsSupport = ('showDirectoryPicker' in window) && !isMobile && !isSmallScreen;
 
       let html = '';
 
@@ -3558,11 +3599,21 @@
         <input type="time" value="${reminders.evening.time}" onchange="updateReminder('evening', 'time', this.value)">
       </div>
       <div class="reminder-row">
+      <div class="reminder-row">
         <label><input type="checkbox" ${reminders.night.enabled ? 'checked' : ''} onchange="updateReminder('night', 'enabled', this.checked)"> Night Review</label>
         <input type="time" value="${reminders.night.time}" onchange="updateReminder('night', 'time', this.value)">
       </div>
     </div>`;
       }
+
+      html += `
+    <div class="sync-card">
+      <h3>Remove Duplicates</h3>
+      <p>Finds tasks with the same name and removes the extra copies. Keeps completed tasks over pending ones.</p>
+      <button class="sync-btn remove" onclick="removeDuplicateTasks()">Remove Duplicates</button>
+      <div id="dedupeStatus" class="sync-status"></div>
+    </div>`;
+
       html += '</div>';
 
       // --- DESKTOP INTEGRATION ---
@@ -3721,12 +3772,33 @@
           // Extract markers
           let priority = 'medium';
           let daily = false;
+
+          // Legacy/standard format
           if (text.includes('[HIGH]')) { priority = 'high'; text = text.replace('[HIGH]', '').trim(); }
           if (text.includes('[DAILY]')) { daily = true; text = text.replace('[DAILY]', '').trim(); }
+
+          // Claude-generated table/pipe format matching: "| priority:high" or "| daily:true"
+          const prioMatch = text.match(/\|\s*priority:\s*(low|medium|high)/i);
+          if (prioMatch) {
+            priority = prioMatch[1].toLowerCase();
+            text = text.replace(prioMatch[0], '').trim();
+          }
+
+          const dailyMatch = text.match(/\|\s*daily:\s*(true|false)/i);
+          if (dailyMatch) {
+            daily = dailyMatch[1].toLowerCase() === 'true';
+            text = text.replace(dailyMatch[0], '').trim();
+          }
+
+          // Cleanup trailing pipes that might get left behind
+          text = text.replace(/\|\s*$/, '').trim();
 
           // Remove notes after --
           const notesSplit = text.split(' -- ');
           text = notesSplit[0].trim();
+
+          // Clean up any trailing/leading markdown markers exposed after tags were removed
+          text = text.replace(/^\*{1,2}|\*{1,2}$/g, '').replace(/^~~|~~$/g, '').trim();
 
           if (text) {
             parsed.push({ text, cat: currentCat, priority, done: isDone, daily });
@@ -3830,12 +3902,79 @@
       }
     }
 
+    async function autoImportPlaybookResources(workspaceDirHandle) {
+      if (!workspaceDirHandle) return 0;
+      const foldersToSync = ['ops', 'outreach'];
+      let newCount = 0;
+
+      for (const folderName of foldersToSync) {
+        try {
+          const folderHandle = await workspaceDirHandle.getDirectoryHandle(folderName);
+          for await (const entry of folderHandle.values()) {
+            if (entry.kind === 'file' && entry.name.endsWith('.md')) {
+              try {
+                const fileHandle = await folderHandle.getFileHandle(entry.name);
+                const file = await fileHandle.getFile();
+                const content = await file.text();
+
+                const title = entry.name.replace('.md', '').replace(/-/g, ' ');
+                const resId = `sync-${folderName}-${entry.name}`;
+
+                const existingIdx = resources.findIndex(r => r.id === resId);
+                if (existingIdx >= 0) {
+                  // Update if content changed
+                  if (resources[existingIdx].content !== content) {
+                    resources[existingIdx].content = content;
+                    resources[existingIdx].updated_at = new Date().toISOString();
+                    if (currentUser && sb && navigator.onLine) {
+                      await sb.from('resources').upsert(resources[existingIdx], { onConflict: 'id' });
+                    }
+                  }
+                } else {
+                  // Create new resource
+                  const newRes = {
+                    id: resId,
+                    user_id: currentUser ? currentUser.id : 'local',
+                    title: title.charAt(0).toUpperCase() + title.slice(1),
+                    type: folderName === 'outreach' ? 'outreach-plan' : 'ops',
+                    content: content,
+                    pinned: false,
+                    sort_order: resources.length,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                  };
+                  resources.push(newRes);
+                  if (currentUser && sb && navigator.onLine) {
+                    await sb.from('resources').upsert(newRes, { onConflict: 'id' });
+                  }
+                  newCount++;
+                }
+              } catch (err) {
+                console.log('Error reading playbook file:', entry.name, err);
+              }
+            }
+          }
+        } catch (err) {
+          // Folder doesn't exist or no permission, ignore silently
+        }
+      }
+
+      if (newCount > 0) {
+        localStorage.setItem(RESOURCES_KEY, JSON.stringify(resources));
+        if (activeTab === 'playbook') renderPlaybook();
+      }
+      return newCount;
+    }
+
     function startAutoImport() {
       if (autoImportInterval) clearInterval(autoImportInterval);
       autoImportInterval = setInterval(async () => {
         if (!workspaceDirHandle) return;
         const perm = await workspaceDirHandle.queryPermission({ mode: 'read' });
-        if (perm === 'granted') await autoImportFromWorkspace(workspaceDirHandle);
+        if (perm === 'granted') {
+          await autoImportFromWorkspace(workspaceDirHandle);
+          await autoImportPlaybookResources(workspaceDirHandle);
+        }
       }, 5 * 60 * 1000); // every 5 minutes
     }
 
@@ -3846,9 +3985,10 @@
         if (perm === 'prompt') perm = await workspaceDirHandle.requestPermission({ mode: 'read' });
         if (perm !== 'granted') { alert('Permission denied. Please reconnect the folder.'); return; }
         const count = await autoImportFromWorkspace(workspaceDirHandle);
+        const resCount = await autoImportPlaybookResources(workspaceDirHandle);
         const statusEl = document.getElementById('workspaceStatus');
         if (statusEl) {
-          statusEl.textContent = count > 0 ? `${count} new tasks imported!` : 'Up to date - no new tasks.';
+          statusEl.textContent = (count > 0 || resCount > 0) ? `${count} new tasks, ${resCount} new resources imported!` : 'Up to date - no new items.';
           statusEl.style.display = 'block';
           setTimeout(() => statusEl.style.display = 'none', 3000);
         }
@@ -3920,6 +4060,7 @@
           startAutoImport();
           // Silent import on load
           await autoImportFromWorkspace(handle);
+          await autoImportPlaybookResources(handle);
         } else if (perm === 'prompt') {
           workspaceDirHandle = handle; // store but don't auto-prompt
         }
