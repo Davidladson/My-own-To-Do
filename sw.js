@@ -3,6 +3,8 @@ const ASSETS = [
   './',
   './index.html',
   './manifest.json',
+  './app.js',
+  './style.css',
   './malveon-icon-192.png',
   './malveon-icon-512.png'
 ];
