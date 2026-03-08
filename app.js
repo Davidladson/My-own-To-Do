@@ -1083,191 +1083,51 @@ function renderHistory(el) {
 
   el.innerHTML = html;
 }
-// ===================== SYNC TAB =====================
-function renderSync() {
-  const el = document.getElementById('syncSection');
-  const lastSync = localStorage.getItem(STORAGE_KEY + '_lastSync') || 'Never';
-  const isOnline = navigator.onLine;
-  const isSignedIn = !!currentUser;
 
-  let authCard = '';
-  if (isSignedIn) {
-    authCard = `
-    <div class="sync-card">
-      <div class="sync-badge${isOnline ? '' : ' offline'}">
-        <div class="dot ${isOnline ? 'live' : 'off'}"></div>
-        ${isOnline ? 'Live sync active' : 'Offline - will sync when connected'}
-      </div>
-      <h3>Signed in</h3>
-      <p>${currentUser.email}<br>Tasks sync in real-time across all your devices.</p>
-      <button class="sync-btn tertiary" onclick="forceSyncNow()">Force Sync Now</button>
-      <div class="sync-status" id="forceSyncStatus">Synced!</div>
-      <button class="sync-btn tertiary" style="margin-top:8px;color:var(--red)" onclick="signOut()">Sign Out</button>
-    </div>`;
-  } else {
-    authCard = `
-    <div class="sync-card">
-      <div class="sync-badge offline">
-        <div class="dot off"></div>
-        Offline mode - no cross-device sync
-      </div>
-      <h3>Not signed in</h3>
-      <p>Sign in to sync tasks across phone and laptop in real-time.</p>
-      <button class="sync-btn secondary" onclick="signOut()">Sign In</button>
-    </div>`;
+function esc(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function showSyncStatus(id) {
+  const el = document.getElementById(id);
+  if (el) {
+    el.style.display = 'block';
+    setTimeout(() => el.style.display = 'none', 3000);
   }
+}
 
-  // Build reminders card
-  const reminders = loadReminderSettings();
-  const notifPerm = ('Notification' in window) ? Notification.permission : 'unsupported';
-  let remindersCard = '';
+async function copyClaudeApiUrl() {
+  if (!sb || !currentUser) return;
+  const { data: { session } } = await sb.auth.getSession();
+  const token = session ? session.access_token : SUPABASE_ANON_KEY;
+  const uid = currentUser.id;
+  const base = SUPABASE_URL;
+  const key = SUPABASE_ANON_KEY;
 
-  if (notifPerm === 'unsupported') {
-    remindersCard = `
-          <div class="sync-card">
-            <h3>Reminders</h3>
-            <p style="color:var(--text-dim)">Notifications are not supported in this browser.</p>
-          </div>`;
-  } else if (notifPerm !== 'granted') {
-    remindersCard = `
-          <div class="notif-permission-card">
-            <p>Enable notifications to get reminders for deep work blocks, power block, and daily review.</p>
-            <button onclick="requestNotifPermission()">Enable Notifications</button>
-          </div>`;
-  } else {
-    remindersCard = `
-          <div class="sync-card" style="text-align:left">
-            <h3>Reminders</h3>
-            <p style="text-align:left;font-size:13px;color:var(--text-dim);margin-bottom:12px">
-              Set daily reminders to stay on track. Notifications fire when the app is open.
-            </p>
-            <div class="reminder-row">
-              <div class="reminder-label">Deep Work 1<small>05:55 - Morning focus block</small></div>
-              <input type="time" class="reminder-time" value="${reminders.morning.time}" onchange="updateReminder('morning','time',this.value)">
-              <label class="toggle-switch">
-                <input type="checkbox" ${reminders.morning.enabled ? 'checked' : ''} onchange="updateReminder('morning','enabled',this.checked)">
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="reminder-row">
-              <div class="reminder-label">Deep Work 2<small>07:15 - Second priority task</small></div>
-              <input type="time" class="reminder-time" value="${reminders.dw2.time}" onchange="updateReminder('dw2','time',this.value)">
-              <label class="toggle-switch">
-                <input type="checkbox" ${reminders.dw2.enabled ? 'checked' : ''} onchange="updateReminder('dw2','enabled',this.checked)">
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="reminder-row">
-              <div class="reminder-label">Eat Breakfast<small>07:50 - Fuel before college</small></div>
-              <input type="time" class="reminder-time" value="${reminders.breakfast.time}" onchange="updateReminder('breakfast','time',this.value)">
-              <label class="toggle-switch">
-                <input type="checkbox" ${reminders.breakfast.enabled ? 'checked' : ''} onchange="updateReminder('breakfast','enabled',this.checked)">
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="reminder-row">
-              <div class="reminder-label">Lunch<small>12:30 - Do not skip</small></div>
-              <input type="time" class="reminder-time" value="${reminders.lunch.time}" onchange="updateReminder('lunch','time',this.value)">
-              <label class="toggle-switch">
-                <input type="checkbox" ${reminders.lunch.enabled ? 'checked' : ''} onchange="updateReminder('lunch','enabled',this.checked)">
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="reminder-row">
-              <div class="reminder-label">Post-College Fuel<small>16:50 - Before exercise</small></div>
-              <input type="time" class="reminder-time" value="${reminders.postcollegefuel.time}" onchange="updateReminder('postcollegefuel','time',this.value)">
-              <label class="toggle-switch">
-                <input type="checkbox" ${reminders.postcollegefuel.enabled ? 'checked' : ''} onchange="updateReminder('postcollegefuel','enabled',this.checked)">
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="reminder-row">
-              <div class="reminder-label">Power Block<small>18:00 - Evening Malveon block</small></div>
-              <input type="time" class="reminder-time" value="${reminders.evening.time}" onchange="updateReminder('evening','time',this.value)">
-              <label class="toggle-switch">
-                <input type="checkbox" ${reminders.evening.enabled ? 'checked' : ''} onchange="updateReminder('evening','enabled',this.checked)">
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="reminder-row">
-              <div class="reminder-label">English Practice<small>20:15 - 30 min out loud</small></div>
-              <input type="time" class="reminder-time" value="${reminders.english.time}" onchange="updateReminder('english','time',this.value)">
-              <label class="toggle-switch">
-                <input type="checkbox" ${reminders.english.enabled ? 'checked' : ''} onchange="updateReminder('english','enabled',this.checked)">
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="reminder-row">
-              <div class="reminder-label">Night Review<small>21:30 - Daily review</small></div>
-              <input type="time" class="reminder-time" value="${reminders.night.time}" onchange="updateReminder('night','time',this.value)">
-              <label class="toggle-switch">
-                <input type="checkbox" ${reminders.night.enabled ? 'checked' : ''} onchange="updateReminder('night','enabled',this.checked)">
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            ${renderSoundSettings(reminders)}
-            <button class="sync-btn tertiary" style="margin-top:12px" onclick="testNotification()">Test Notification</button>
-            <div class="sync-status" id="testNotifStatus">Notification sent!</div>
-          </div>`;
+  const readCmd  = `curl -s "${base}/rest/v1/tasks?select=*&user_id=eq.${uid}&order=updatedAt.desc" -H "apikey: ${key}" -H "Authorization: Bearer ${token}"`;
+  const writeCmd = `curl -s -X PATCH "${base}/rest/v1/tasks?id=eq.TASK_ID" -H "apikey: ${key}" -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" -H "Prefer: return=representation" -d '{"done":true,"updatedAt":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}'`;
+  const addCmd   = `curl -s -X POST "${base}/rest/v1/tasks" -H "apikey: ${key}" -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" -H "Prefer: return=representation" -d '{"id":"NEW_UUID","text":"Task text","cat":"today","done":false,"priority":2,"daily":false,"user_id":"${uid}","updatedAt":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}'`;
+
+  const expiry = session ? new Date(session.expires_at * 1000).toLocaleTimeString() : 'N/A';
+  const full = `# Malveon Supabase API — Claude Two-Way Sync\n# Token valid until: ${expiry}\n\n## READ all tasks\n${readCmd}\n\n## MARK task done (replace TASK_ID)\n${writeCmd}\n\n## ADD new task (replace NEW_UUID with a real UUID)\n${addCmd}`;
+
+  navigator.clipboard.writeText(full).then(() => showSyncStatus('claudeApiStatus'));
+
+  // Also update the displayed snippet in-page
+  const el = document.getElementById('claudeApiSnippet');
+  if (el) {
+    el.textContent = `READ: ${readCmd.slice(0, 80)}...\nToken expires: ${expiry}`;
+    el.style.display = 'block';
   }
+}
 
-  el.innerHTML = `
-    <div class="sync-header">
-      <h2>Sync & Cloud</h2>
-      <p>Malveon Tasks uses Supabase for encrypted cloud sync.</p>
-    </div>
-
-    ${authCard}
-
-    <div class="sync-card">
-      <div class="sync-stats">
-        <div class="sync-stat">
-          <div class="sync-stat-label">Last Sync</div>
-          <div class="sync-stat-value">${lastSync}</div>
-        </div>
-        <div class="sync-stat">
-          <div class="sync-stat-label">Local Version</div>
-          <div class="sync-stat-value">v2.1.0</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="sync-card">
-      <h3>Export as Markdown</h3>
-      <p>Download your current state as markdown files.</p>
-      <button class="sync-btn secondary" style="margin-bottom:8px" onclick="downloadTasksMd()">Download TASKS.md</button><br>
-      <button class="sync-btn tertiary" onclick="downloadDailyLog()">Download daily-log.md</button>
-    </div>
-
-    <div class="sync-card">
-      <h3>Workspace Folder</h3>
-      <p>Connect a local folder to auto-import tasks from .md files. (Desktop Browser Only)</p>
-      <div id="workspaceStatus" style="margin-bottom:12px">
-        ${workspaceDirHandle ?
-      `<div class="sync-badge"><div class="dot live"></div>Connected: ${workspaceDirHandle.name}</div>` :
-      '<div class="sync-badge offline"><div class="dot off"></div>No folder connected</div>'}
-      </div>
-      ${workspaceDirHandle ?
-      '<button class="sync-btn secondary" onclick="disconnectWorkspace()">Disconnect Folder</button>' :
-      '<button class="sync-btn primary" onclick="connectWorkspaceFolder()">Connect Local Folder</button>'}
-    </div>
-
-    <div class="sync-card">
-      <h3>PWA Reminders</h3>
-      <p>Set daily notification times for deep work and reviews.</p>
-      <div id="reminderControls" style="margin-top:12px">
-        <!-- Rendered by renderSoundSettings -->
-      </div>
-    </div>
-
-    <div class="sync-card">
-      <h3>Appearance</h3>
-      <p>Custom colors coming soon. System dark mode is default.</p>
-    </div>
-  `;
-
-  // Also render sub-components
-  renderSoundSettings(loadReminderSettings());
+function copyClaudeSnapshot() {
+  let text = `MALVEON SNAPSHOT - ${new Date().toLocaleDateString()}\n\n`;
+  text += generateTasksMd();
+  navigator.clipboard.writeText(text).then(() => showSyncStatus('claudeSnapStatus'));
 }
 
 async function forceSyncNow() {
@@ -2301,12 +2161,19 @@ function renderSync() {
   let html = '';
 
   // --- CLOUD SYNC & ACCOUNT ---
+  const lastSync = localStorage.getItem(STORAGE_KEY + '_lastSync') || 'Never';
+  const isOnline = navigator.onLine;
+
   html += '<div class="sync-group" id="cloudSyncGroup">\n';
   html += '  <div class="sync-section-title">Cloud Sync & Account</div>\n';
 
   if (currentUser) {
     html += `
     <div class="sync-card">
+      <div class="sync-badge${isOnline ? '' : ' offline'}">
+        <div class="dot ${isOnline ? 'live' : 'off'}"></div>
+        ${isOnline ? 'Live sync active' : 'Offline - will sync when connected'}
+      </div>
       <h3>Account</h3>
       <p>Signed-in as <strong>${esc(currentUser.email)}</strong></p>
       <button class="sync-btn tertiary" onclick="signOut()">Sign Out</button>
@@ -2314,6 +2181,10 @@ function renderSync() {
   } else {
     html += `
     <div class="sync-card">
+      <div class="sync-badge offline">
+        <div class="dot off"></div>
+        Offline mode - no cross-device sync
+      </div>
       <h3>Sign in for Cloud Sync</h3>
       <p>Sync tasks across all devices securely.</p>
       <button class="sync-btn primary" onclick="signOut()">Sign In / Create Account</button>
@@ -2322,9 +2193,23 @@ function renderSync() {
 
   html += `
     <div class="sync-card">
+      <div class="sync-stats">
+        <div class="sync-stat">
+          <div class="sync-stat-label">Last Sync</div>
+          <div class="sync-stat-value">${lastSync}</div>
+        </div>
+        <div class="sync-stat">
+          <div class="sync-stat-label">Local Version</div>
+          <div class="sync-stat-value">v2.1.0</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sync-card">
       <h3>Manual Cloud Sync</h3>
       <p>Tasks sync automatically to Supabase. Use this to force a pull from the cloud.</p>
-      <button class="sync-btn secondary" onclick="syncFromSupabase()" ${!currentUser ? 'disabled style="opacity:0.5"' : ''}>Force Cloud Sync</button>
+      <button class="sync-btn secondary" onclick="forceSyncNow()" ${!currentUser ? 'disabled style="opacity:0.5"' : ''}>Force Cloud Sync</button>
+      <div id="forceSyncStatus" class="sync-status">Synced!</div>
     </div>
   </div>`;
 
@@ -2441,32 +2326,33 @@ function renderSync() {
       <p>Download your current state as markdown files.</p>
       <button class="sync-btn secondary" style="margin-bottom:8px" onclick="downloadTasksMd()">Download TASKS.md</button><br>
       <button class="sync-btn tertiary" onclick="downloadDailyLog()">Download daily-log.md</button>
+      <div id="syncStatus" class="sync-status">Files exported!</div>
     </div>
 
     <div class="sync-card">
       <h3>Claude Auto-Sync (2-way)</h3>
-      <p>Tasks auto-sync to Supabase in real-time. Claude can read your tasks directly via the API.</p>
+      <p>Tasks sync to Supabase in real-time. Copy commands below to give Claude direct read + write access.</p>
       ${currentUser ? `
-        <button class="sync-btn primary" onclick="copyClaudeApiUrl()">Copy API URL for Claude</button>
-        <div class="sync-status" id="claudeApiStatus">API URL copied!</div>
-        <button class="sync-btn secondary" style="margin-top:8px" onclick="copyClaudeSnapshot()">Copy Latest Snapshot</button>
+        <button class="sync-btn primary" onclick="copyClaudeApiUrl()">Copy Full API Commands</button>
+        <div class="sync-status" id="claudeApiStatus">Commands copied! Paste into Claude.</div>
+        <pre id="claudeApiSnippet" style="display:none;margin-top:10px;font-size:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px;white-space:pre-wrap;word-break:break-all;color:var(--text-dim);text-align:left"></pre>
+        <button class="sync-btn secondary" style="margin-top:8px" onclick="copyClaudeSnapshot()">Copy Snapshot (offline)</button>
         <div class="sync-status" id="claudeSnapStatus">Snapshot copied!</div>
-        <p style="margin-top:8px;font-size:12px;color:var(--green)">Auto-sync active — snapshot updates every time you change a task.</p>
+        <p style="margin-top:8px;font-size:12px;color:var(--green)">Token tied to your session — refresh if Claude says 401.</p>
       ` : `<p style="color:var(--text-dim)">Sign in to enable Claude API sync.</p>`}
     </div>
-    
+
     <div class="sync-card" style="text-align:left">
       <h3>How Sync Works</h3>
       <p style="text-align:left;line-height:1.6">
-        ${currentUser ? '<strong style="color:var(--green)">Device sync:</strong> Your tasks sync automatically between devices via Supabase.<br><br>' : ''}
-        <strong style="color:var(--accent)">Claude API sync (new):</strong><br>
-        1. Your tasks auto-sync to Supabase in real-time<br>
-        2. Copy the API URL and give it to Claude<br>
-        3. Claude reads your tasks directly — no file downloads needed<br><br>
+        ${currentUser ? '<strong style="color:var(--green)">Device sync:</strong> Tasks sync automatically across all your devices via Supabase Realtime.<br><br>' : ''}
+        <strong style="color:var(--accent)">Claude 2-way API sync:</strong><br>
+        1. Tap "Copy Full API Commands" above<br>
+        2. Paste into Claude — it gets READ + WRITE + ADD commands<br>
+        3. Claude can now read tasks live and push changes back directly<br>
+        4. Token expires with your session — re-copy if Claude gets a 401<br><br>
         <strong style="color:var(--text-dim)">Manual sync (legacy):</strong><br>
-        1. Tap "Download Both" to export files<br>
-        2. Save to your OneDrive folder<br>
-        3. Claude reads the files from OneDrive
+        Download files and save to OneDrive folder for Claude to read
       </p>
     </div>
   </div>`; // end desktopSyncGroup
