@@ -867,6 +867,20 @@
       color: #000;
     }
 
+    .sync-section-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin: 24px 0 12px 0;
+      text-align: left;
+    }
+
+    .sync-group {
+      margin-bottom: 32px;
+    }
+
     .sync-btn.secondary {
       background: var(--accent);
       color: #fff;
@@ -3476,6 +3490,149 @@
     document.getElementById('resourceModal').addEventListener('click', function (e) {
       if (e.target === this) closeResourceModal();
     });
+
+    // ===================== SYNC TAB RENDER =====================
+    function renderSync() {
+      const el = document.getElementById('syncSection');
+      if (activeTab !== 'sync') {
+        el.style.display = 'none';
+        return;
+      }
+      el.style.display = 'block';
+
+      const reminders = loadReminderSettings();
+      const hasFsSupport = ('showDirectoryPicker' in window);
+
+      let html = '';
+
+      // --- CLOUD SYNC & ACCOUNT ---
+      html += '<div class="sync-group" id="cloudSyncGroup">\n';
+      html += '  <div class="sync-section-title">Cloud Sync & Account</div>\n';
+
+      if (currentUser) {
+        html += `
+    <div class="sync-card">
+      <h3>Account</h3>
+      <p>Signed-in as <strong>${esc(currentUser.email)}</strong></p>
+      <button class="sync-btn tertiary" onclick="signOut()">Sign Out</button>
+    </div>`;
+      } else {
+        html += `
+    <div class="sync-card">
+      <h3>Sign in for Cloud Sync</h3>
+      <p>Sync tasks across all devices securely.</p>
+      <button class="sync-btn primary" onclick="signOut()">Sign In / Create Account</button>
+    </div>`;
+      }
+
+      html += `
+    <div class="sync-card">
+      <h3>Manual Cloud Sync</h3>
+      <p>Tasks sync automatically to Supabase. Use this to force a pull from the cloud.</p>
+      <button class="sync-btn secondary" onclick="syncFromSupabase()" ${!currentUser ? 'disabled style="opacity:0.5"' : ''}>Force Cloud Sync</button>
+    </div>
+  </div>`;
+
+      // --- APP SETTINGS ---
+      html += '<div class="sync-group" id="settingsGroup">\n';
+      html += '  <div class="sync-section-title">App Settings</div>\n';
+      html += `
+    <div class="sync-card notif-permission-card">
+      <h3>Notifications</h3>
+      <p>Enable notifications to receive smart nudges based on your task context, plus scheduled reminders for deep work blocks and night review.</p>
+      <button class="sync-btn secondary" onclick="requestNotifPermission()" style="margin-bottom:8px">Enable Notifications</button><br>
+      <button class="sync-btn tertiary" onclick="testNotification()">Test Notification</button>
+      <div id="testNotifStatus" class="sync-status">Test sent! Check your device.</div>
+    </div>`;
+
+      if ('Notification' in window && Notification.permission === 'granted') {
+        html += `
+    <div class="sync-card">
+      <h3>Daily Reminders</h3>
+      <div class="reminder-row">
+        <label><input type="checkbox" ${reminders.morning.enabled ? 'checked' : ''} onchange="updateReminder('morning', 'enabled', this.checked)"> Deep Work 1</label>
+        <input type="time" value="${reminders.morning.time}" onchange="updateReminder('morning', 'time', this.value)">
+      </div>
+      <div class="reminder-row">
+        <label><input type="checkbox" ${reminders.evening.enabled ? 'checked' : ''} onchange="updateReminder('evening', 'enabled', this.checked)"> Power Block</label>
+        <input type="time" value="${reminders.evening.time}" onchange="updateReminder('evening', 'time', this.value)">
+      </div>
+      <div class="reminder-row">
+        <label><input type="checkbox" ${reminders.night.enabled ? 'checked' : ''} onchange="updateReminder('night', 'enabled', this.checked)"> Night Review</label>
+        <input type="time" value="${reminders.night.time}" onchange="updateReminder('night', 'time', this.value)">
+      </div>
+    </div>`;
+      }
+      html += '</div>';
+
+      // --- DESKTOP INTEGRATION ---
+      html += `<div class="sync-group" id="desktopSyncGroup" style="${hasFsSupport ? '' : 'display: none;'}">`;
+      html += '  <div class="sync-section-title">Desktop Integration (Claude)</div>\n';
+
+      if (workspaceDirHandle) {
+        html += `
+    <div class="sync-card workspace-card connected">
+      <h3>✅ Workspace Connected</h3>
+      <p>Auto-syncing with <strong>${esc(workspaceDirHandle.name)}</strong> every 5 mins. New tasks added there will appear here.</p>
+      <button class="sync-btn secondary" onclick="manualSyncFromWorkspace()">Sync Now</button>
+      <div id="workspaceStatus" class="sync-status" style="margin-top:12px;"></div>
+    </div>`;
+      } else {
+        html += `
+    <div class="sync-card workspace-card">
+      <h3>Workspace Folder Auto-Sync</h3>
+      <p>Connect your local Malveon folder on your desktop. The app will auto-import any new tasks added to TASKS.md every 5 mins.</p>
+      <button class="sync-btn primary" onclick="connectWorkspaceFolder()">Connect Folder</button>
+      <div id="workspaceStatus" class="sync-status" style="margin-top:12px;"></div>
+    </div>`;
+      }
+
+      html += `
+    <div class="sync-card">
+      <h3>Import TASKS.md</h3>
+      <p>Prefer manual? Select a TASKS.md file to import tasks.</p>
+      <button class="sync-btn secondary" onclick="document.getElementById('importFileInput').click()">Select File</button>
+      <input type="file" id="importFileInput" accept=".md" style="display:none" onchange="handleImportFile(event)">
+      <div id="importStatus" class="sync-status">Tasks imported!</div>
+    </div>
+
+    <div class="sync-card">
+      <h3>Export as Markdown</h3>
+      <p>Download your current state as markdown files.</p>
+      <button class="sync-btn secondary" style="margin-bottom:8px" onclick="downloadTasksMd()">Download TASKS.md</button><br>
+      <button class="sync-btn tertiary" onclick="downloadHistoryMd()">Download daily-log.md</button>
+    </div>
+
+    <div class="sync-card">
+      <h3>Claude Auto-Sync (2-way)</h3>
+      <p>Tasks auto-sync to Supabase in real-time. Claude can read your tasks directly via the API.</p>
+      ${currentUser ? `
+        <button class="sync-btn primary" onclick="copyClaudeApiUrl()">Copy API URL for Claude</button>
+        <div class="sync-status" id="claudeApiStatus">API URL copied!</div>
+        <button class="sync-btn secondary" style="margin-top:8px" onclick="copyClaudeSnapshot()">Copy Latest Snapshot</button>
+        <div class="sync-status" id="claudeSnapStatus">Snapshot copied!</div>
+        <p style="margin-top:8px;font-size:12px;color:var(--green)">Auto-sync active — snapshot updates every time you change a task.</p>
+      ` : `<p style="color:var(--text-dim)">Sign in to enable Claude API sync.</p>`}
+    </div>
+    
+    <div class="sync-card" style="text-align:left">
+      <h3>How Sync Works</h3>
+      <p style="text-align:left;line-height:1.6">
+        ${currentUser ? '<strong style="color:var(--green)">Device sync:</strong> Your tasks sync automatically between devices via Supabase.<br><br>' : ''}
+        <strong style="color:var(--accent)">Claude API sync (new):</strong><br>
+        1. Your tasks auto-sync to Supabase in real-time<br>
+        2. Copy the API URL and give it to Claude<br>
+        3. Claude reads your tasks directly — no file downloads needed<br><br>
+        <strong style="color:var(--text-dim)">Manual sync (legacy):</strong><br>
+        1. Tap "Download Both" to export files<br>
+        2. Save to your OneDrive folder<br>
+        3. Claude reads the files from OneDrive
+      </p>
+    </div>
+  </div>`; // end desktopSyncGroup
+
+      el.innerHTML = html;
+    }
 
     // ===================== IMPORT FROM TASKS.MD =====================
     function handleImportFile(event) {

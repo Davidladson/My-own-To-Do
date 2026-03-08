@@ -24,9 +24,17 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  e.respondWith(
-    caches.match(e.request).then(r => r || fetch(e.request))
-  );
+  const url = new URL(e.request.url);
+  // Network-first for API calls (Supabase, external); cache-first for local assets
+  if (url.origin !== self.location.origin) {
+    e.respondWith(
+      fetch(e.request).catch(() => caches.match(e.request))
+    );
+  } else {
+    e.respondWith(
+      caches.match(e.request).then(r => r || fetch(e.request))
+    );
+  }
 });
 
 // Handle notification messages sent from the app (mobile fallback)
