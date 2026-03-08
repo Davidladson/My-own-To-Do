@@ -9,6 +9,8 @@
     const RESOURCES_KEY = 'malveon_resources';
     const REMINDERS_KEY = 'malveon_reminders';
     const CLAUDE_NOTES_KEY = 'malveon_claude_notes';
+    const SOUND_SETTINGS_KEY = 'malveon_sound_settings';
+    const NOTIF_COUNT_KEY = 'malveon_notif_count';
 
     // Supabase client
     let sb = null;
@@ -756,7 +758,11 @@
         let extra = '';
         if (c === 'done') count = `<span class="count">${tasks.filter(t => t.done).length}</span>`;
         else if (c === 'history') extra = ' history-tab';
-        else if (c === 'sync') extra = ' sync-tab';
+        else if (c === 'sync') {
+          extra = ' sync-tab';
+          const notifCount = getNotifCount();
+          if (notifCount > 0) count = `<span class="count notif-badge">${notifCount}</span>`;
+        }
         else if (c === 'playbook') { extra = ' playbook-tab'; count = `<span class="count">${resources.length}</span>`; }
         else count = `<span class="count">${tasks.filter(t => t.cat === c && !t.done).length}</span>`;
         return `<button class="tab${extra} ${c === activeTab ? 'active' : ''}" onclick="switchTab('${c}')">
@@ -767,6 +773,7 @@
 
     function switchTab(tab) {
       activeTab = tab;
+      if (tab === 'sync') clearNotifCount();
       renderTabs();
       renderView();
       // Show FAB on task tabs and playbook, hide on history/sync
@@ -1198,6 +1205,7 @@
           <span class="toggle-slider"></span>
         </label>
       </div>
+      ${renderSoundSettings(reminders)}
       <button class="sync-btn tertiary" style="margin-top:12px" onclick="testNotification()">Test Notification</button>
       <div class="sync-status" id="testNotifStatus">Notification sent!</div>
     </div>`;
@@ -1756,6 +1764,34 @@
       localStorage.setItem(REMINDERS_KEY, JSON.stringify(reminders));
     }
 
+    // ===================== NOTIFICATION COUNT =====================
+    function getNotifCount() {
+      const saved = localStorage.getItem(NOTIF_COUNT_KEY);
+      if (!saved) return 0;
+      const data = JSON.parse(saved);
+      if (data.date !== todayStr()) { localStorage.removeItem(NOTIF_COUNT_KEY); return 0; }
+      return data.count || 0;
+    }
+
+    function incrementNotifCount() {
+      const count = getNotifCount() + 1;
+      localStorage.setItem(NOTIF_COUNT_KEY, JSON.stringify({ count, date: todayStr() }));
+      updateAppBadge(count);
+      renderTabs();
+    }
+
+    function clearNotifCount() {
+      localStorage.removeItem(NOTIF_COUNT_KEY);
+      updateAppBadge(0);
+    }
+
+    function updateAppBadge(count) {
+      if ('setAppBadge' in navigator) {
+        if (count > 0) navigator.setAppBadge(count).catch(() => {});
+        else navigator.clearAppBadge().catch(() => {});
+      }
+    }
+
     // ===================== CLAUDE NOTES =====================
     function loadClaudeNotes() {
       const saved = localStorage.getItem(CLAUDE_NOTES_KEY);
@@ -1784,6 +1820,105 @@
       notes.splice(index, 1);
       localStorage.setItem(CLAUDE_NOTES_KEY, JSON.stringify(notes));
       renderClaudeNotesList();
+    }
+
+    // ===================== REMINDER SOUND =====================
+    const DEFAULT_SOUND_SETTINGS = { enabled: true, volume: 70, type: 'chime' };
+
+    function loadSoundSettings() {
+      const saved = localStorage.getItem(SOUND_SETTINGS_KEY);
+      if (!saved) return { ...DEFAULT_SOUND_SETTINGS };
+      return { ...DEFAULT_SOUND_SETTINGS, ...JSON.parse(saved) };
+    }
+
+    function saveSoundSettings(s) {
+      localStorage.setItem(SOUND_SETTINGS_KEY, JSON.stringify(s));
+    }
+
+    function updateSoundSetting(key, value) {
+      const s = loadSoundSettings();
+      s[key] = value;
+      saveSoundSettings(s);
+    }
+
+    function playReminderSound(type) {
+      const s = loadSoundSettings();
+      if (!s.enabled) return;
+      const soundType = type || s.type;
+      const vol = Math.max(0, Math.min(1, (s.volume || 70) / 100));
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+        const schedule = (freq, startOffset, duration, waveType, peak) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.type = waveType || 'sine';
+          osc.frequency.value = freq;
+          const t = ctx.currentTime + startOffset;
+          gain.gain.setValueAtTime(0, t);
+          gain.gain.linearRampToValueAtTime(vol * peak, t + 0.04);
+          gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+          osc.start(t);
+          osc.stop(t + duration + 0.02);
+        };
+
+        if (soundType === 'chime') {
+          // Three descending bell notes: warm and clear
+          schedule(1047, 0.00, 0.55, 'sine', 0.40);  // C6
+          schedule(880,  0.28, 0.55, 'sine', 0.35);  // A5
+          schedule(698,  0.56, 0.70, 'sine', 0.30);  // F5
+          setTimeout(() => ctx.close(), 2000);
+
+        } else if (soundType === 'pulse') {
+          // Short sharp triple pulse: urgent, cuts through noise
+          schedule(1000, 0.00, 0.12, 'square', 0.18);
+          schedule(1000, 0.18, 0.12, 'square', 0.18);
+          schedule(1000, 0.36, 0.12, 'square', 0.18);
+          setTimeout(() => ctx.close(), 1500);
+
+        } else if (soundType === 'gentle') {
+          // Single slow fade sine: minimal, barely-there nudge
+          schedule(528, 0.00, 0.90, 'sine', 0.28);
+          setTimeout(() => ctx.close(), 2000);
+        }
+      } catch (e) { /* silent fail if AudioContext is unavailable */ }
+    }
+
+    function testReminderSound() {
+      playReminderSound(loadSoundSettings().type);
+    }
+
+    function renderSoundSettings(reminders) {
+      const s = loadSoundSettings();
+      return `
+      <div class="sound-divider"></div>
+      <div class="sound-section-label">Reminder Sound</div>
+      <div class="reminder-row sound-toggle-row">
+        <div class="reminder-label">Sound On<small>Play a tone when reminders fire</small></div>
+        <label class="toggle-switch">
+          <input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="updateSoundSetting('enabled', this.checked); renderSync()">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      ${s.enabled ? `
+      <div class="reminder-row">
+        <div class="reminder-label">Volume<small>${s.volume}%</small></div>
+        <input type="range" class="sound-volume-slider" min="10" max="100" step="5" value="${s.volume}"
+          oninput="this.previousElementSibling.querySelector('small').textContent = this.value + '%'"
+          onchange="updateSoundSetting('volume', parseInt(this.value))">
+      </div>
+      <div class="reminder-row">
+        <div class="reminder-label">Sound Type<small>Choose your alert tone</small></div>
+        <select class="sound-type-select" onchange="updateSoundSetting('type', this.value)">
+          <option value="chime"  ${s.type === 'chime'  ? 'selected' : ''}>Chime</option>
+          <option value="pulse"  ${s.type === 'pulse'  ? 'selected' : ''}>Pulse</option>
+          <option value="gentle" ${s.type === 'gentle' ? 'selected' : ''}>Gentle</option>
+        </select>
+      </div>
+      <button class="sync-btn tertiary" style="margin-top:8px;width:100%" onclick="testReminderSound()">Test Sound</button>
+      ` : ''}`;
     }
 
     function renderClaudeNotesList() {
@@ -1874,10 +2009,13 @@
 
       const reminders = loadReminderSettings();
 
-      // Check scheduled reminders (morning, evening, night)
+      let firedAny = false;
+
+      // Check scheduled reminders
       for (const [slot, config] of Object.entries(reminders)) {
         if (config.enabled && config.time === currentTime) {
           showNotification('Malveon Tasks - ' + config.label, config.body);
+          if (!firedAny) { playReminderSound(); firedAny = true; incrementNotifCount(); }
           lastFiredMinute = currentTime;
         }
       }
@@ -1887,6 +2025,7 @@
       for (const t of todayTasks) {
         if (t.reminderTime === currentTime) {
           showNotification('Task Reminder', t.text);
+          if (!firedAny) { playReminderSound(); firedAny = true; incrementNotifCount(); }
           lastFiredMinute = currentTime;
         }
       }
@@ -2235,6 +2374,7 @@
         <label><input type="checkbox" ${reminders.night.enabled ? 'checked' : ''} onchange="updateReminder('night', 'enabled', this.checked)"> Night Review (21:30)</label>
         <input type="time" value="${reminders.night.time}" onchange="updateReminder('night', 'time', this.value)">
       </div>
+      ${renderSoundSettings(reminders)}
     </div>`;
       }
 

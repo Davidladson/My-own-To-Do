@@ -145,6 +145,16 @@
       padding: 1px 7px;
       font-size: 11px;
     }
+    .tab .count.notif-badge {
+      background: #e53935;
+      color: #fff;
+      font-weight: 700;
+      animation: notif-pulse 1.8s ease-in-out infinite;
+    }
+    @keyframes notif-pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.85; transform: scale(1.1); }
+    }
 
     .section-actions {
       display: flex;
@@ -1422,4 +1432,67 @@
     .claude-note-delete:hover {
       color: var(--red);
       background: rgba(248, 113, 113, 0.1);
+    }
+
+    /* ===================== SOUND SETTINGS ===================== */
+
+    .sound-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 16px 0 14px;
+    }
+
+    .sound-section-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 10px;
+    }
+
+    .sound-toggle-row .reminder-label small {
+      display: block;
+      font-size: 11px;
+      color: var(--text-dim);
+      font-weight: 400;
+      margin-top: 2px;
+    }
+
+    .sound-volume-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 130px;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--border);
+      outline: none;
+      cursor: pointer;
+      accent-color: var(--accent);
+    }
+
+    .sound-volume-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+    }
+
+    .sound-type-select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+      padding: 5px 8px;
+      cursor: pointer;
+      min-width: 100px;
+    }
+
+    .sound-type-select:focus {
+      outline: none;
+      border-color: var(--accent);
     }
