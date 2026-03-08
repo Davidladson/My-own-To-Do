@@ -8,6 +8,7 @@
     const QUEUE_KEY = 'malveon_sync_queue';
     const RESOURCES_KEY = 'malveon_resources';
     const REMINDERS_KEY = 'malveon_reminders';
+    const CLAUDE_NOTES_KEY = 'malveon_claude_notes';
 
     // Supabase client
     let sb = null;
@@ -1134,7 +1135,7 @@
         Set daily reminders to stay on track. Notifications fire when the app is open.
       </p>
       <div class="reminder-row">
-        <div class="reminder-label">Deep Work 1<small>Morning focus block</small></div>
+        <div class="reminder-label">Deep Work 1<small>05:55 - Morning focus block</small></div>
         <input type="time" class="reminder-time" value="${reminders.morning.time}" onchange="updateReminder('morning','time',this.value)">
         <label class="toggle-switch">
           <input type="checkbox" ${reminders.morning.enabled ? 'checked' : ''} onchange="updateReminder('morning','enabled',this.checked)">
@@ -1142,7 +1143,39 @@
         </label>
       </div>
       <div class="reminder-row">
-        <div class="reminder-label">Power Block<small>Evening Malveon block</small></div>
+        <div class="reminder-label">Deep Work 2<small>07:15 - Second priority task</small></div>
+        <input type="time" class="reminder-time" value="${reminders.dw2.time}" onchange="updateReminder('dw2','time',this.value)">
+        <label class="toggle-switch">
+          <input type="checkbox" ${reminders.dw2.enabled ? 'checked' : ''} onchange="updateReminder('dw2','enabled',this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="reminder-row">
+        <div class="reminder-label">Eat Breakfast<small>07:50 - Fuel before college</small></div>
+        <input type="time" class="reminder-time" value="${reminders.breakfast.time}" onchange="updateReminder('breakfast','time',this.value)">
+        <label class="toggle-switch">
+          <input type="checkbox" ${reminders.breakfast.enabled ? 'checked' : ''} onchange="updateReminder('breakfast','enabled',this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="reminder-row">
+        <div class="reminder-label">Lunch<small>12:30 - Do not skip</small></div>
+        <input type="time" class="reminder-time" value="${reminders.lunch.time}" onchange="updateReminder('lunch','time',this.value)">
+        <label class="toggle-switch">
+          <input type="checkbox" ${reminders.lunch.enabled ? 'checked' : ''} onchange="updateReminder('lunch','enabled',this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="reminder-row">
+        <div class="reminder-label">Post-College Fuel<small>16:50 - Before exercise</small></div>
+        <input type="time" class="reminder-time" value="${reminders.postcollegefuel.time}" onchange="updateReminder('postcollegefuel','time',this.value)">
+        <label class="toggle-switch">
+          <input type="checkbox" ${reminders.postcollegefuel.enabled ? 'checked' : ''} onchange="updateReminder('postcollegefuel','enabled',this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="reminder-row">
+        <div class="reminder-label">Power Block<small>18:00 - Evening Malveon block</small></div>
         <input type="time" class="reminder-time" value="${reminders.evening.time}" onchange="updateReminder('evening','time',this.value)">
         <label class="toggle-switch">
           <input type="checkbox" ${reminders.evening.enabled ? 'checked' : ''} onchange="updateReminder('evening','enabled',this.checked)">
@@ -1150,7 +1183,15 @@
         </label>
       </div>
       <div class="reminder-row">
-        <div class="reminder-label">Night Review<small>Write your daily review</small></div>
+        <div class="reminder-label">English Practice<small>20:15 - 30 min out loud</small></div>
+        <input type="time" class="reminder-time" value="${reminders.english.time}" onchange="updateReminder('english','time',this.value)">
+        <label class="toggle-switch">
+          <input type="checkbox" ${reminders.english.enabled ? 'checked' : ''} onchange="updateReminder('english','enabled',this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="reminder-row">
+        <div class="reminder-label">Night Review<small>21:30 - Daily review</small></div>
         <input type="time" class="reminder-time" value="${reminders.night.time}" onchange="updateReminder('night','time',this.value)">
         <label class="toggle-switch">
           <input type="checkbox" ${reminders.night.enabled ? 'checked' : ''} onchange="updateReminder('night','enabled',this.checked)">
@@ -1275,6 +1316,17 @@
         const unpinned = resources.filter(r => !r.pinned);
         [...pinned, ...unpinned].forEach(r => {
           md += `- ${r.title}${r.pinned ? ' (pinned)' : ''} [${r.type}]\n`;
+        });
+        md += '\n';
+      }
+
+      // Messages to Claude
+      const claudeNotes = loadClaudeNotes();
+      if (claudeNotes.length > 0) {
+        md += `## Messages to Claude\n\n`;
+        md += `<!-- Claude: Read these messages at the start of every session. Use them to update context, adjust tasks, and follow up. -->\n\n`;
+        [...claudeNotes].reverse().forEach(n => {
+          md += `> [${n.date} ${n.time}] ${n.text}\n`;
         });
         md += '\n';
       }
@@ -1678,19 +1730,76 @@
 
     // ===================== NOTIFICATIONS & REMINDERS =====================
     const DEFAULT_REMINDERS = {
-      morning: { time: '05:55', enabled: true, label: 'Deep Work 1', body: 'Time for your morning deep work block. Phone on airplane mode. Start with the hardest task.' },
-      evening: { time: '18:00', enabled: true, label: 'Power Block', body: 'Power Block starting now. 90 minutes of focused Malveon work. No distractions.' },
-      night: { time: '21:30', enabled: true, label: 'Night Review', body: 'Time to write your daily self-review. 3 bullets + score out of 10.' }
+      morning:         { time: '05:55', enabled: true,  label: 'Deep Work 1',       body: 'DW1 starts now. Phone on DND. Hardest task first. 60 minutes.' },
+      dw2:             { time: '07:15', enabled: true,  label: 'Deep Work 2',       body: 'DW2 starts now. 40 minutes. Second priority task before college.' },
+      breakfast:       { time: '07:50', enabled: true,  label: 'Eat Breakfast',     body: 'Eat now before college. Protein if possible. Skipping = energy crash by 11am.' },
+      lunch:           { time: '12:30', enabled: true,  label: 'Lunch',             body: 'Eat a proper lunch. Long hunger gap kills your Power Block. Do not skip.' },
+      postcollegefuel: { time: '16:50', enabled: true,  label: 'Post-College Fuel', body: 'Eat a snack before exercise. Fuel your body before Power Block starts.' },
+      evening:         { time: '18:00', enabled: true,  label: 'Power Block',       body: 'Power Block now. 90 minutes of focused Malveon work. Most important block of your day.' },
+      english:         { time: '20:15', enabled: true,  label: 'English Practice',  body: '30 min out loud. Pitch Malveon. Explain a feature. Describe your day. Record 2x/week.' },
+      night:           { time: '21:30', enabled: true,  label: 'Night Review',      body: 'Score your day /10. Write 3 bullets: 1 Win, 1 Learning, 1 Tomorrow task.' }
     };
 
     function loadReminderSettings() {
       const saved = localStorage.getItem(REMINDERS_KEY);
-      if (saved) return JSON.parse(saved);
-      return JSON.parse(JSON.stringify(DEFAULT_REMINDERS));
+      const defaults = JSON.parse(JSON.stringify(DEFAULT_REMINDERS));
+      if (!saved) return defaults;
+      const parsed = JSON.parse(saved);
+      // Merge: add any new slots from defaults that are missing in saved settings
+      for (const slot of Object.keys(defaults)) {
+        if (!parsed[slot]) parsed[slot] = defaults[slot];
+      }
+      return parsed;
     }
 
     function saveReminderSettings(reminders) {
       localStorage.setItem(REMINDERS_KEY, JSON.stringify(reminders));
+    }
+
+    // ===================== CLAUDE NOTES =====================
+    function loadClaudeNotes() {
+      const saved = localStorage.getItem(CLAUDE_NOTES_KEY);
+      return saved ? JSON.parse(saved) : [];
+    }
+
+    function submitClaudeNote() {
+      const input = document.getElementById('claudeNoteInput');
+      const text = input ? input.value.trim() : '';
+      if (!text) return;
+      const now = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      const dateStr = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+      const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      const notes = loadClaudeNotes();
+      notes.unshift({ date: dateStr, time: timeStr, text });
+      localStorage.setItem(CLAUDE_NOTES_KEY, JSON.stringify(notes));
+      input.value = '';
+      const status = document.getElementById('claudeNoteStatus');
+      if (status) { status.style.display = 'block'; setTimeout(() => status.style.display = 'none', 2500); }
+      renderClaudeNotesList();
+    }
+
+    function deleteClaudeNote(index) {
+      const notes = loadClaudeNotes();
+      notes.splice(index, 1);
+      localStorage.setItem(CLAUDE_NOTES_KEY, JSON.stringify(notes));
+      renderClaudeNotesList();
+    }
+
+    function renderClaudeNotesList() {
+      const el = document.getElementById('claudeNotesList');
+      if (!el) return;
+      const notes = loadClaudeNotes();
+      if (notes.length === 0) {
+        el.innerHTML = '<p class="claude-notes-empty">No messages yet. Claude will read anything you write here.</p>';
+        return;
+      }
+      el.innerHTML = notes.map((n, i) => `
+        <div class="claude-note-item">
+          <div class="claude-note-meta">${n.date} ${n.time}</div>
+          <div class="claude-note-text">${esc(n.text)}</div>
+          <button class="claude-note-delete" onclick="deleteClaudeNote(${i})" title="Delete">✕</button>
+        </div>`).join('');
     }
 
     function updateReminder(slot, field, value) {
@@ -2095,16 +2204,35 @@
     <div class="sync-card">
       <h3>Daily Reminders</h3>
       <div class="reminder-row">
-        <label><input type="checkbox" ${reminders.morning.enabled ? 'checked' : ''} onchange="updateReminder('morning', 'enabled', this.checked)"> Deep Work 1</label>
+        <label><input type="checkbox" ${reminders.morning.enabled ? 'checked' : ''} onchange="updateReminder('morning', 'enabled', this.checked)"> Deep Work 1 (05:55)</label>
         <input type="time" value="${reminders.morning.time}" onchange="updateReminder('morning', 'time', this.value)">
       </div>
       <div class="reminder-row">
-        <label><input type="checkbox" ${reminders.evening.enabled ? 'checked' : ''} onchange="updateReminder('evening', 'enabled', this.checked)"> Power Block</label>
+        <label><input type="checkbox" ${reminders.dw2.enabled ? 'checked' : ''} onchange="updateReminder('dw2', 'enabled', this.checked)"> Deep Work 2 (07:15)</label>
+        <input type="time" value="${reminders.dw2.time}" onchange="updateReminder('dw2', 'time', this.value)">
+      </div>
+      <div class="reminder-row">
+        <label><input type="checkbox" ${reminders.breakfast.enabled ? 'checked' : ''} onchange="updateReminder('breakfast', 'enabled', this.checked)"> Eat Breakfast (07:50)</label>
+        <input type="time" value="${reminders.breakfast.time}" onchange="updateReminder('breakfast', 'time', this.value)">
+      </div>
+      <div class="reminder-row">
+        <label><input type="checkbox" ${reminders.lunch.enabled ? 'checked' : ''} onchange="updateReminder('lunch', 'enabled', this.checked)"> Lunch (12:30)</label>
+        <input type="time" value="${reminders.lunch.time}" onchange="updateReminder('lunch', 'time', this.value)">
+      </div>
+      <div class="reminder-row">
+        <label><input type="checkbox" ${reminders.postcollegefuel.enabled ? 'checked' : ''} onchange="updateReminder('postcollegefuel', 'enabled', this.checked)"> Post-College Fuel (16:50)</label>
+        <input type="time" value="${reminders.postcollegefuel.time}" onchange="updateReminder('postcollegefuel', 'time', this.value)">
+      </div>
+      <div class="reminder-row">
+        <label><input type="checkbox" ${reminders.evening.enabled ? 'checked' : ''} onchange="updateReminder('evening', 'enabled', this.checked)"> Power Block (18:00)</label>
         <input type="time" value="${reminders.evening.time}" onchange="updateReminder('evening', 'time', this.value)">
       </div>
       <div class="reminder-row">
+        <label><input type="checkbox" ${reminders.english.enabled ? 'checked' : ''} onchange="updateReminder('english', 'enabled', this.checked)"> English Practice (20:15)</label>
+        <input type="time" value="${reminders.english.time}" onchange="updateReminder('english', 'time', this.value)">
+      </div>
       <div class="reminder-row">
-        <label><input type="checkbox" ${reminders.night.enabled ? 'checked' : ''} onchange="updateReminder('night', 'enabled', this.checked)"> Night Review</label>
+        <label><input type="checkbox" ${reminders.night.enabled ? 'checked' : ''} onchange="updateReminder('night', 'enabled', this.checked)"> Night Review (21:30)</label>
         <input type="time" value="${reminders.night.time}" onchange="updateReminder('night', 'time', this.value)">
       </div>
     </div>`;
@@ -2118,6 +2246,21 @@
       <div id="dedupeStatus" class="sync-status"></div>
     </div>`;
 
+      html += '</div>';
+
+      // --- MESSAGES TO CLAUDE ---
+      const claudeNotes = loadClaudeNotes();
+      html += '<div class="sync-group" id="claudeNotesGroup">';
+      html += '  <div class="sync-section-title">Messages to Claude</div>';
+      html += `
+    <div class="sync-card claude-notes-card">
+      <h3>Write to Claude</h3>
+      <p class="claude-notes-hint">Inform Claude, leave a reminder, or update context. Claude reads this at the start of every session.</p>
+      <textarea id="claudeNoteInput" class="claude-note-input" rows="3" placeholder="e.g. Kavin said demo will be ready March 25&#10;e.g. I feel low energy today, keep DW1 light&#10;e.g. Remind me to update the pitch before Saturday sync"></textarea>
+      <button class="sync-btn primary claude-note-submit" onclick="submitClaudeNote()">Save Message</button>
+      <div id="claudeNoteStatus" class="sync-status" style="display:none">Saved. Claude will read this next session.</div>
+      <div id="claudeNotesList" class="claude-notes-list"></div>
+    </div>`;
       html += '</div>';
 
       // --- DESKTOP INTEGRATION ---
@@ -2187,6 +2330,7 @@
   </div>`; // end desktopSyncGroup
 
       el.innerHTML = html;
+      renderClaudeNotesList();
     }
 
     // ===================== IMPORT FROM TASKS.MD =====================
