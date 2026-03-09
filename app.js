@@ -62,7 +62,7 @@ const defaultTasks = [
 ];
 
 const catLabels = {
-  'today': 'Today', 'this-week': 'This Week', 'before-pilot': 'Before Pilot',
+  'today': 'Today', 'daily-habits': 'Daily Habits', 'this-week': 'This Week', 'before-pilot': 'Before Pilot',
   'waiting': 'Waiting', 'someday': 'Someday', 'playbook': 'Playbook',
   'done': 'Done', 'history': 'History', 'sync': 'Sync'
 };
@@ -668,7 +668,7 @@ function checkDayReset() {
 
     // Update per-task streaks before resetting
     tasks.forEach(t => {
-      if (t.daily && t.cat === 'today') {
+      if (t.daily && (t.cat === 'today' || t.cat === 'daily-habits')) {
         if (t.done) {
           // Was completed yesterday - increment streak
           t.streak = (t.streak || 0) + 1;
@@ -752,7 +752,7 @@ function recordDayComplete() {
 
 // ===================== TABS =====================
 function renderTabs() {
-  const cats = ['today', 'this-week', 'before-pilot', 'waiting', 'someday', 'playbook', 'done', 'history', 'sync'];
+  const cats = ['today', 'daily-habits', 'this-week', 'before-pilot', 'waiting', 'someday', 'playbook', 'done', 'history', 'sync'];
   const el = document.getElementById('tabsContainer');
   el.innerHTML = cats.map(c => {
     let count = '';
@@ -781,7 +781,7 @@ function switchTab(tab) {
   document.getElementById('fabBtn').style.display = (tab === 'history' || tab === 'sync') ? 'none' : 'flex';
   // Show quick capture on task list tabs only
   const quickCap = document.getElementById('quickCapture');
-  const showQuickCapture = ['today', 'this-week', 'before-pilot', 'waiting', 'someday'].includes(tab);
+  const showQuickCapture = ['today', 'daily-habits', 'this-week', 'before-pilot', 'waiting', 'someday'].includes(tab);
   quickCap.style.display = showQuickCapture ? 'flex' : 'none';
 }
 
@@ -923,9 +923,9 @@ function removeDuplicates(sectionKey) {
 // ===================== REVIEW PROMPT =====================
 function checkReviewPrompt() {
   const el = document.getElementById('reviewPrompt');
-  if (activeTab !== 'today') { el.innerHTML = ''; return; }
+  if (activeTab !== 'today' && activeTab !== 'daily-habits') { el.innerHTML = ''; return; }
 
-  const todayTasks = tasks.filter(t => t.cat === 'today');
+  const todayTasks = tasks.filter(t => t.cat === 'today' || t.cat === 'daily-habits');
   const done = todayTasks.filter(t => t.done).length;
   const total = todayTasks.length;
   const pct = total > 0 ? Math.round(done / total * 100) : 0;
@@ -1019,7 +1019,7 @@ function updateProgress() {
   document.getElementById('progressText').textContent = done + ' of ' + total + ' done';
   document.getElementById('progressPct').textContent = pct + '%';
 
-  const todayTasks = tasks.filter(t => t.cat === 'today');
+  const todayTasks = tasks.filter(t => t.cat === 'today' || t.cat === 'daily-habits');
   const todayDone = todayTasks.filter(t => t.done).length;
   const score = todayTasks.length > 0 ? Math.round(todayDone / todayTasks.length * 10) : 0;
   document.getElementById('scoreNum').textContent = score;
@@ -1156,7 +1156,7 @@ function generateTasksMd() {
   }
 
   // Active categories
-  const cats = ['today', 'this-week', 'before-pilot', 'waiting', 'someday'];
+  const cats = ['today', 'daily-habits', 'this-week', 'before-pilot', 'waiting', 'someday'];
   cats.forEach(cat => {
     const items = tasks.filter(t => t.cat === cat && !t.done);
     if (items.length === 0) return;
@@ -1882,8 +1882,8 @@ function checkReminders() {
     }
   }
 
-  // Check per-task reminders
-  const todayTasks = tasks.filter(t => t.cat === 'today' && !t.done && t.reminderTime);
+  // Check per-task reminders (today + daily habits)
+  const todayTasks = tasks.filter(t => (t.cat === 'today' || t.cat === 'daily-habits') && !t.done && t.reminderTime);
   for (const t of todayTasks) {
     if (t.reminderTime === currentTime) {
       showNotification('Task Reminder', t.text);
@@ -2417,6 +2417,7 @@ function parseTasksMd(content) {
   let currentCat = 'today';
   const catMap = {
     'today': 'today',
+    'daily habits': 'daily-habits',
     'this week': 'this-week',
     'before pilot': 'before-pilot',
     'before first pilot': 'before-pilot',
