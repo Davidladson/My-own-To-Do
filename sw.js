@@ -1,4 +1,4 @@
-const CACHE_NAME = 'malveon-tasks-v5';
+const CACHE_NAME = 'malveon-tasks-v6';
 const ASSETS = [
   './',
   './index.html',

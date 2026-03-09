@@ -290,6 +290,9 @@ function sanitizeTaskText(text) {
   if (prioMatch) clean = clean.replace(prioMatch[0], '').trim();
   const dailyMatch = clean.match(/\|\s*daily:\s*(true|false)/i);
   if (dailyMatch) clean = clean.replace(dailyMatch[0], '').trim();
+  // Strip leftover | remind:HH:MM (value is extracted separately in the migration)
+  const remindMatch = clean.match(/\|\s*remind:\s*\d{1,2}:\d{2}/i);
+  if (remindMatch) clean = clean.replace(remindMatch[0], '').trim();
   clean = clean.replace(/\|\s*$/, '').trim();
   clean = clean.replace(/^\*{1,2}|\*{1,2}$/g, '').replace(/^~~|~~$/g, '').trim();
   return clean;
@@ -329,10 +332,19 @@ async function syncFromSupabase() {
     if (!tErr && remoteTasks) {
       remoteTasks.forEach(r => {
         if (r.text) {
+          // Extract reminderTime from old-format text before sanitizing
+          if (!r.reminder_time) {
+            const remindMatch = r.text.match(/\|\s*remind:\s*(\d{1,2}:\d{2})/i);
+            if (remindMatch) {
+              r.reminder_time = remindMatch[1];
+            }
+          }
           const cleanText = sanitizeTaskText(r.text);
           if (cleanText !== r.text) {
             r.text = cleanText;
-            sb.from('tasks').update({ text: cleanText }).eq('id', r.id).then();
+            const updatePayload = { text: cleanText };
+            if (r.reminder_time) updatePayload.reminder_time = r.reminder_time;
+            sb.from('tasks').update(updatePayload).eq('id', r.id).then();
           }
         }
       });
@@ -565,10 +577,21 @@ async function initApp() {
   if (saved) {
     tasks = JSON.parse(saved);
 
-    // Silent Migration: Clean up any tasks loaded that were corrupted with Claude | priority tags previously
+    // Silent Migration: Clean up any tasks loaded that were corrupted with Claude | priority / | remind: tags
     let migrated = false;
     tasks.forEach(t => {
       let originalText = t.text;
+
+      // Extract reminderTime from text if not already set (handles old imported tasks)
+      if (!t.reminderTime && t.text) {
+        const remindMatch = t.text.match(/\|\s*remind:\s*(\d{1,2}:\d{2})/i);
+        if (remindMatch) {
+          t.reminderTime = remindMatch[1];
+          t._needsMigrationPush = true;
+          migrated = true;
+        }
+      }
+
       t.text = sanitizeTaskText(t.text);
 
       if (t.text !== originalText) {
@@ -2412,7 +2435,8 @@ function handleImportFile(event) {
     }
 
     // Count new vs existing
-    const normalize = s => s.replace(/\*+/g, '').toLowerCase().trim();
+    // normalize strips bold markers AND leftover | remind:HH:MM so re-importing doesn't create duplicates
+    const normalize = s => s.replace(/\*+/g, '').replace(/\|\s*remind:\s*\d{1,2}:\d{2}/gi, '').toLowerCase().trim();
     const existingTexts = tasks.map(t => normalize(t.text));
     const newTasks = parsed.filter(p => !existingTexts.includes(normalize(p.text)));
     const existing = parsed.length - newTasks.length;
@@ -2429,6 +2453,7 @@ function handleImportFile(event) {
       const newTask = {
         id: uid(), text: p.text, cat: p.cat, priority: p.priority,
         done: p.done, notes: '', daily: p.daily,
+        reminderTime: p.reminderTime || null,
         subtasks: [], streak: 0, lastStreakDate: null,
         updatedAt: new Date().toISOString()
       };
@@ -2502,6 +2527,14 @@ function parseTasksMd(content) {
         text = text.replace(dailyMatch[0], '').trim();
       }
 
+      // Extract reminder time (| remind:HH:MM) — must strip this before cleanup
+      let reminderTime = null;
+      const remindMatch = text.match(/\|\s*remind:\s*(\d{1,2}:\d{2})/i);
+      if (remindMatch) {
+        reminderTime = remindMatch[1];
+        text = text.replace(remindMatch[0], '').trim();
+      }
+
       // Cleanup trailing pipes that might get left behind
       text = text.replace(/\|\s*$/, '').trim();
 
@@ -2513,7 +2546,7 @@ function parseTasksMd(content) {
       text = text.replace(/^\*{1,2}|\*{1,2}$/g, '').replace(/^~~|~~$/g, '').trim();
 
       if (text) {
-        parsed.push({ text, cat: currentCat, priority, done: isDone, daily });
+        parsed.push({ text, cat: currentCat, priority, done: isDone, daily, reminderTime });
       }
     }
   }
@@ -2587,8 +2620,8 @@ async function autoImportFromWorkspace(handle) {
     const parsed = parseTasksMd(content);
     if (parsed.length === 0) return 0;
 
-    // Normalize text: strip markdown bold markers (**) for comparison
-    const normalize = s => s.replace(/\*+/g, '').toLowerCase().trim();
+    // Normalize text: strip bold markers AND leftover | remind:HH:MM so re-importing won't create duplicates
+    const normalize = s => s.replace(/\*+/g, '').replace(/\|\s*remind:\s*\d{1,2}:\d{2}/gi, '').toLowerCase().trim();
     const existingTexts = tasks.map(t => normalize(t.text));
     const newTasks = parsed.filter(p =>
       !existingTexts.includes(normalize(p.text)) && p.cat !== 'done'
@@ -2599,6 +2632,7 @@ async function autoImportFromWorkspace(handle) {
         const newTask = {
           id: uid(), text: p.text, cat: p.cat, priority: p.priority,
           done: false, notes: '', daily: p.daily,
+          reminderTime: p.reminderTime || null,
           subtasks: [], streak: 0, lastStreakDate: null,
           updatedAt: new Date().toISOString()
         };
