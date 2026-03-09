@@ -88,6 +88,10 @@ ALTER PUBLICATION supabase_realtime ADD TABLE resources;
 -- ALTER TABLE tasks ADD COLUMN IF NOT EXISTS streak INTEGER DEFAULT 0;
 -- ALTER TABLE tasks ADD COLUMN IF NOT EXISTS last_streak_date DATE;
 
+-- ========== PHASE 3: ADD REMINDER_TIME COLUMN ==========
+-- Run this if you already have the tasks table from Phase 1 or 2:
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reminder_time TEXT;
+
 -- ========== AUTO-UPDATE TRIGGER ==========
 CREATE OR REPLACE FUNCTION update_updated_at()
 RETURNS TRIGGER AS $$

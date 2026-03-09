@@ -441,10 +441,28 @@ async function syncFromSupabase() {
         // Push local-only resources
         const remoteResMap = {};
         remoteResources.forEach(r => { remoteResMap[r.id] = r; });
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         for (const r of resources) {
+          // Ensure ID is a valid UUID (resources table uses UUID primary key)
+          if (!r.id || !uuidRegex.test(r.id)) {
+            r.id = crypto.randomUUID();
+            localStorage.setItem(RESOURCES_KEY, JSON.stringify(resources));
+          }
           if (!remoteResMap[r.id]) {
             r.user_id = currentUser.id;
-            await sb.from('resources').upsert(r, { onConflict: 'id' });
+            // Only push fields the DB table has
+            const row = {
+              id: r.id,
+              user_id: r.user_id,
+              title: r.title,
+              type: r.type,
+              content: r.content || '',
+              pinned: r.pinned || false,
+              sort_order: r.sort_order || 0,
+              updated_at: r.updated_at || new Date().toISOString()
+            };
+            const { error: resErr } = await sb.from('resources').upsert(row, { onConflict: 'id' });
+            if (resErr) console.log('Resource push error — id:', r.id, '| message:', resErr.message, '| details:', resErr.details, '| hint:', resErr.hint);
           }
         }
         localStorage.setItem(RESOURCES_KEY, JSON.stringify(resources));
@@ -1981,19 +1999,20 @@ const defaultResources = [
 async function seedDefaultResources() {
   if (!currentUser || !sb) return;
   resources = defaultResources.map(r => ({
-    ...r,
-    id: crypto.randomUUID ? crypto.randomUUID() : uid() + '-' + uid(),
+    id: crypto.randomUUID(),
     user_id: currentUser.id,
+    title: r.title,
+    type: r.type,
+    content: r.content || '',
+    pinned: r.pinned || false,
     sort_order: 0,
-    created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   }));
 
   // Push each to Supabase
   for (const r of resources) {
-    await sb.from('resources').upsert(r, { onConflict: 'id' }).then(({ error }) => {
-      if (error) console.log('Seed resource error:', error);
-    });
+    const { error } = await sb.from('resources').upsert(r, { onConflict: 'id' });
+    if (error) console.log('Seed resource error — message:', error.message, '| details:', error.details, '| hint:', error.hint);
   }
   localStorage.setItem(RESOURCES_KEY, JSON.stringify(resources));
 }
@@ -2271,6 +2290,12 @@ function renderSync() {
       <p>Finds tasks with the same name and removes the extra copies. Keeps completed tasks over pending ones.</p>
       <button class="sync-btn remove" onclick="removeDuplicateTasks()">Remove Duplicates</button>
       <div id="dedupeStatus" class="sync-status"></div>
+    </div>
+    <div class="sync-card">
+      <h3>Clear Default Tasks</h3>
+      <p>Removes the original sample tasks that were loaded when you first opened the app. Use this if you have too many tasks from the initial setup.</p>
+      <button class="sync-btn remove" onclick="clearDefaultTasks()">Clear Default Tasks</button>
+      <div id="clearDefaultStatus" class="sync-status"></div>
     </div>`;
 
   html += '</div>';
@@ -2714,6 +2739,33 @@ function removeDuplicateTasks() {
     statusEl.textContent = `Removed ${toDelete.length} duplicate${toDelete.length > 1 ? 's' : ''}.`;
     statusEl.style.display = 'block';
     setTimeout(() => statusEl.style.display = 'none', 3000);
+  }
+}
+
+function clearDefaultTasks() {
+  // Default task texts from the original seed — used to identify and remove them
+  const defaultTexts = new Set(defaultTasks.map(t => t.text.toLowerCase().trim()));
+  const toDelete = tasks.filter(t => defaultTexts.has(t.text.toLowerCase().trim()));
+
+  if (toDelete.length === 0) {
+    alert('No default sample tasks found. Your tasks are already clean.');
+    return;
+  }
+
+  if (!confirm(`Found ${toDelete.length} original sample task${toDelete.length > 1 ? 's' : ''} from the initial setup. Remove them?\n\nYour TASKS.md tasks will stay.`)) return;
+
+  toDelete.forEach(t => {
+    tasks = tasks.filter(x => x.id !== t.id);
+    deleteTaskFromSupabase(t.id);
+  });
+
+  save(); renderTabs(); renderView(); updateProgress();
+
+  const statusEl = document.getElementById('clearDefaultStatus');
+  if (statusEl) {
+    statusEl.textContent = `Removed ${toDelete.length} default task${toDelete.length > 1 ? 's' : ''}.`;
+    statusEl.style.display = 'block';
+    setTimeout(() => statusEl.style.display = 'none', 4000);
   }
 }
 
