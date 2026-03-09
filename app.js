@@ -26,6 +26,16 @@ try {
 
 function uid() { return Math.random().toString(36).substr(2, 9); }
 
+function uuidv4() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
 const defaultTasks = [
   { id: uid(), text: "Morning deep work block (DW1) completed", cat: "today", priority: "high", done: false, notes: "", daily: true },
   { id: uid(), text: "5 new outreach messages sent", cat: "today", priority: "high", done: false, notes: "", daily: true },
@@ -445,7 +455,7 @@ async function syncFromSupabase() {
         for (const r of resources) {
           // Ensure ID is a valid UUID (resources table uses UUID primary key)
           if (!r.id || !uuidRegex.test(r.id)) {
-            r.id = crypto.randomUUID();
+            r.id = uuidv4();
             localStorage.setItem(RESOURCES_KEY, JSON.stringify(resources));
           }
           if (!remoteResMap[r.id]) {
@@ -1125,9 +1135,9 @@ async function copyClaudeApiUrl() {
   const base = SUPABASE_URL;
   const key = SUPABASE_ANON_KEY;
 
-  const readCmd  = `curl -s "${base}/rest/v1/tasks?select=*&user_id=eq.${uid}&order=updatedAt.desc" -H "apikey: ${key}" -H "Authorization: Bearer ${token}"`;
+  const readCmd = `curl -s "${base}/rest/v1/tasks?select=*&user_id=eq.${uid}&order=updatedAt.desc" -H "apikey: ${key}" -H "Authorization: Bearer ${token}"`;
   const writeCmd = `curl -s -X PATCH "${base}/rest/v1/tasks?id=eq.TASK_ID" -H "apikey: ${key}" -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" -H "Prefer: return=representation" -d '{"done":true,"updatedAt":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}'`;
-  const addCmd   = `curl -s -X POST "${base}/rest/v1/tasks" -H "apikey: ${key}" -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" -H "Prefer: return=representation" -d '{"id":"NEW_UUID","text":"Task text","cat":"today","done":false,"priority":2,"daily":false,"user_id":"${uid}","updatedAt":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}'`;
+  const addCmd = `curl -s -X POST "${base}/rest/v1/tasks" -H "apikey: ${key}" -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" -H "Prefer: return=representation" -d '{"id":"NEW_UUID","text":"Task text","cat":"today","done":false,"priority":2,"daily":false,"user_id":"${uid}","updatedAt":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}'`;
 
   const expiry = session ? new Date(session.expires_at * 1000).toLocaleTimeString() : 'N/A';
   const full = `# Malveon Supabase API — Claude Two-Way Sync\n# Token valid until: ${expiry}\n\n## READ all tasks\n${readCmd}\n\n## MARK task done (replace TASK_ID)\n${writeCmd}\n\n## ADD new task (replace NEW_UUID with a real UUID)\n${addCmd}`;
@@ -1999,7 +2009,7 @@ const defaultResources = [
 async function seedDefaultResources() {
   if (!currentUser || !sb) return;
   resources = defaultResources.map(r => ({
-    id: crypto.randomUUID(),
+    id: uuidv4(),
     user_id: currentUser.id,
     title: r.title,
     type: r.type,
@@ -2121,7 +2131,7 @@ async function saveResource() {
     }
   } else {
     const newRes = {
-      id: crypto.randomUUID ? crypto.randomUUID() : uid() + '-' + uid(),
+      id: uuidv4(),
       user_id: currentUser ? currentUser.id : 'local',
       title, type, content, pinned,
       sort_order: resources.length,
@@ -2620,9 +2630,10 @@ async function autoImportPlaybookResources(workspaceDirHandle) {
             const content = await file.text();
 
             const title = entry.name.replace('.md', '').replace(/-/g, ' ');
-            const resId = `sync-${folderName}-${entry.name}`;
+            const resTitle = title.charAt(0).toUpperCase() + title.slice(1);
+            const resType = folderName === 'outreach' ? 'outreach-plan' : 'ops';
 
-            const existingIdx = resources.findIndex(r => r.id === resId);
+            const existingIdx = resources.findIndex(r => r.title === resTitle && r.type === resType);
             if (existingIdx >= 0) {
               // Update if content changed
               if (resources[existingIdx].content !== content) {
@@ -2635,10 +2646,10 @@ async function autoImportPlaybookResources(workspaceDirHandle) {
             } else {
               // Create new resource
               const newRes = {
-                id: resId,
+                id: uuidv4(),
                 user_id: currentUser ? currentUser.id : 'local',
-                title: title.charAt(0).toUpperCase() + title.slice(1),
-                type: folderName === 'outreach' ? 'outreach-plan' : 'ops',
+                title: resTitle,
+                type: resType,
                 content: content,
                 pinned: false,
                 sort_order: resources.length,
