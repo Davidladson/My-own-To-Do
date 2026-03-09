@@ -11,12 +11,14 @@ const REMINDERS_KEY = 'malveon_reminders';
 const CLAUDE_NOTES_KEY = 'malveon_claude_notes';
 const SOUND_SETTINGS_KEY = 'malveon_sound_settings';
 const NOTIF_COUNT_KEY = 'malveon_notif_count';
+const DELETED_TASKS_KEY = 'malveon_deleted_tasks';
 
 // Supabase client
 let sb = null;
 let currentUser = null;
 let realtimeChannel = null;
 let isSyncing = false;
+let deletedTaskTexts = new Set();
 
 try {
   sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -300,6 +302,15 @@ function sanitizeTaskText(text) {
 
 async function deleteTaskFromSupabase(id) {
   if (!currentUser || !sb) return;
+
+  // Track deleted text so auto-import from TASKS.md doesn't resurrect it
+  const taskToDelete = tasks.find(t => t.id === id);
+  if (taskToDelete) {
+    const normalize = s => s.replace(/\*+/g, '').replace(/\|\s*remind:\s*\d{1,2}:\d{2}/gi, '').toLowerCase().trim();
+    deletedTaskTexts.add(normalize(taskToDelete.text));
+    localStorage.setItem(DELETED_TASKS_KEY, JSON.stringify(Array.from(deletedTaskTexts)));
+  }
+
   if (navigator.onLine) {
     const { error } = await sb.from('tasks').delete().eq('id', id);
     if (error) queueChange('tasks', 'delete', { id });
@@ -621,6 +632,13 @@ async function initApp() {
 
   dailyLog = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
   resources = JSON.parse(localStorage.getItem(RESOURCES_KEY) || '[]');
+
+  try {
+    const deletedArr = JSON.parse(localStorage.getItem(DELETED_TASKS_KEY) || '[]');
+    deletedTaskTexts = new Set(deletedArr);
+  } catch (e) {
+    deletedTaskTexts = new Set();
+  }
 
   checkDayReset();
   updateDate();
@@ -1450,6 +1468,13 @@ function saveTask() {
 
 function deleteTask(id) {
   if (confirm('Delete this task?')) {
+    const taskToDelete = tasks.find(t => t.id === id);
+    if (taskToDelete) {
+      const normalize = s => s.replace(/\*+/g, '').replace(/\|\s*remind:\s*\d{1,2}:\d{2}/gi, '').toLowerCase().trim();
+      deletedTaskTexts.add(normalize(taskToDelete.text));
+      localStorage.setItem(DELETED_TASKS_KEY, JSON.stringify(Array.from(deletedTaskTexts)));
+    }
+
     tasks = tasks.filter(t => t.id !== id);
     deleteTaskFromSupabase(id);
     save(); closeModal(); renderTabs(); renderView(); updateProgress();
@@ -1578,6 +1603,13 @@ function closeTaskDetail() {
 
 function deleteFromDetail(id) {
   if (confirm('Delete this task? This cannot be undone.')) {
+    const taskToDelete = tasks.find(t => t.id === id);
+    if (taskToDelete) {
+      const normalize = s => s.replace(/\*+/g, '').replace(/\|\s*remind:\s*\d{1,2}:\d{2}/gi, '').toLowerCase().trim();
+      deletedTaskTexts.add(normalize(taskToDelete.text));
+      localStorage.setItem(DELETED_TASKS_KEY, JSON.stringify(Array.from(deletedTaskTexts)));
+    }
+
     tasks = tasks.filter(t => t.id !== id);
     deleteTaskFromSupabase(id);
     save(); closeTaskDetail(); renderTabs(); renderView(); updateProgress();
@@ -2438,7 +2470,7 @@ function handleImportFile(event) {
     // normalize strips bold markers AND leftover | remind:HH:MM so re-importing doesn't create duplicates
     const normalize = s => s.replace(/\*+/g, '').replace(/\|\s*remind:\s*\d{1,2}:\d{2}/gi, '').toLowerCase().trim();
     const existingTexts = tasks.map(t => normalize(t.text));
-    const newTasks = parsed.filter(p => !existingTexts.includes(normalize(p.text)));
+    const newTasks = parsed.filter(p => !existingTexts.includes(normalize(p.text)) && !deletedTaskTexts.has(normalize(p.text)));
     const existing = parsed.length - newTasks.length;
 
     if (newTasks.length === 0) {
@@ -2624,7 +2656,7 @@ async function autoImportFromWorkspace(handle) {
     const normalize = s => s.replace(/\*+/g, '').replace(/\|\s*remind:\s*\d{1,2}:\d{2}/gi, '').toLowerCase().trim();
     const existingTexts = tasks.map(t => normalize(t.text));
     const newTasks = parsed.filter(p =>
-      !existingTexts.includes(normalize(p.text)) && p.cat !== 'done'
+      !existingTexts.includes(normalize(p.text)) && !deletedTaskTexts.has(normalize(p.text)) && p.cat !== 'done'
     );
 
     if (newTasks.length > 0) {
