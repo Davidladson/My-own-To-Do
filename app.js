@@ -844,6 +844,7 @@ function renderTabs() {
       if (notifCount > 0) count = `<span class="count notif-badge">${notifCount}</span>`;
     }
     else if (c === 'playbook') { extra = ' playbook-tab'; count = `<span class="count">${resources.length}</span>`; }
+    else if (c === 'reminders') count = `<span class="count">${tasks.filter(t => !t.done && (t.cat === 'reminders' || t.reminderTime)).length}</span>`;
     else count = `<span class="count">${tasks.filter(t => t.cat === c && !t.done).length}</span>`;
     return `<button class="tab${extra} ${c === activeTab ? 'active' : ''}" onclick="switchTab('${c}')">
       ${catLabels[c]}${count}
