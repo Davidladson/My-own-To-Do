@@ -66,9 +66,10 @@
     </div>
 
     <div class="tabs" id="tabsContainer"></div>
-    <div id="quickCapture" class="quick-capture" style="display:none">
+    <div id="quickCapture" class="quick-capture" style="display:none; gap: 8px;">
       <input type="text" id="quickCaptureInput" placeholder="Quick add a task..."
-        onkeydown="if(event.key==='Enter')quickAdd()">
+        onkeydown="if(event.key==='Enter')quickAdd()" style="flex: 1;">
+      <button class="quick-reminder-btn" onclick="createQuickReminder()" title="Create Standalone Reminder">🔔 Reminder</button>
     </div>
     <div id="reviewPrompt"></div>
     <div class="task-list" id="taskList"></div>

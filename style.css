@@ -145,15 +145,26 @@
       padding: 1px 7px;
       font-size: 11px;
     }
+
     .tab .count.notif-badge {
       background: #e53935;
       color: #fff;
       font-weight: 700;
       animation: notif-pulse 1.8s ease-in-out infinite;
     }
+
     @keyframes notif-pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.85; transform: scale(1.1); }
+
+      0%,
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: 0.85;
+        transform: scale(1.1);
+      }
     }
 
     .section-actions {
@@ -1495,4 +1506,50 @@
     .sound-type-select:focus {
       outline: none;
       border-color: var(--accent);
+    }
+
+    /* ===================== TASK REMINDER UI ===================== */
+    .task-bell-btn {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-dim);
+      border: none;
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+
+    .task-bell-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text);
+    }
+
+    .task-bell-btn.active {
+      background: rgba(251, 191, 36, 0.15);
+      color: var(--yellow);
+    }
+
+    .quick-reminder-btn {
+      background: rgba(251, 191, 36, 0.15);
+      color: var(--yellow);
+      border: 1px solid rgba(251, 191, 36, 0.3);
+      border-radius: 12px;
+      padding: 0 16px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+
+    .quick-reminder-btn:active {
+      transform: scale(0.95);
     }

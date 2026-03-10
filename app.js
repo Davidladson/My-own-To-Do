@@ -955,9 +955,11 @@ function renderTasks() {
           ${t.notes ? '<span class="tag category">has details</span>' : ''}
           ${subsTotal > 0 ? `<span class="subtask-inline">${subsDone}/${subsTotal}</span>` : ''}
           ${t.daily && streakVal > 2 ? `<span class="streak-badge">${streakVal}d</span>` : ''}
-          ${t.reminderTime ? `<span class="bell-icon" title="Reminder at ${t.reminderTime}">&#128276; ${t.reminderTime}</span>` : ''}
         </div>
       </div>
+      <button class="task-bell-btn ${t.reminderTime ? 'active' : ''}" onclick="event.stopPropagation(); toggleTaskReminder('${t.id}')" title="${t.reminderTime ? 'Reminder: ' + t.reminderTime : 'Add Reminder'}">
+        ${t.reminderTime ? '&#128276; ' + t.reminderTime : '&#128276;'}
+      </button>
     </div>`;
   }).join('') + '<div class="hint">Tap task to see details | Tap circle to complete</div>';
 }
@@ -1088,8 +1090,101 @@ function toggleTask(id) {
   const todayTasks = tasks.filter(x => x.cat === 'today');
   if (todayTasks.length > 0 && todayTasks.every(x => x.done)) recordDayComplete();
 }
+// ===================== REMINDERS =====================
+function toggleTaskReminder(id) {
+  const t = tasks.find(x => x.id === id);
+  if (!t) return;
+  if (t.reminderTime) {
+    if (confirm(`Clear reminder for "${t.text}" at ${t.reminderTime}?`)) {
+      delete t.reminderTime;
+      t.updatedAt = new Date().toISOString();
+      save();
+      pushTaskToSupabase(t);
+      renderTasks();
+    }
+  } else {
+    // Open a native time picker by dynamically creating an input
+    const input = document.createElement('input');
+    input.type = 'time';
+    // If setting a time right now, default to next nearest hour
+    const d = new Date();
+    d.setHours(d.getHours() + 1);
+    d.setMinutes(0);
+    input.value = d.toTimeString().slice(0, 5);
 
-// ===================== PROGRESS =====================
+    input.addEventListener('change', () => {
+      if (input.value) {
+        t.reminderTime = input.value;
+        t.updatedAt = new Date().toISOString();
+        save();
+        pushTaskToSupabase(t);
+        renderTasks();
+      }
+    });
+
+    // Simulate click to open picker (works better on mobile than window.prompt)
+    if ('showPicker' in HTMLInputElement.prototype) {
+      try {
+        // Need to append to DOM briefly for showPicker to work in some browsers
+        input.style.position = 'absolute';
+        input.style.opacity = '0';
+        document.body.appendChild(input);
+        input.showPicker();
+        input.addEventListener('blur', () => input.remove());
+      } catch (e) {
+        // Fallback for browsers that block showPicker without strict user gesture
+        const time = prompt("Enter reminder time (HH:MM):", input.value);
+        if (time && /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(time)) {
+          t.reminderTime = time;
+          t.updatedAt = new Date().toISOString();
+          save();
+          pushTaskToSupabase(t);
+          renderTasks();
+        }
+        if (input.parentNode) input.remove();
+      }
+    } else {
+      const time = prompt("Enter reminder time (HH:MM):", input.value);
+      if (time && /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(time)) {
+        t.reminderTime = time;
+        t.updatedAt = new Date().toISOString();
+        save();
+        pushTaskToSupabase(t);
+        renderTasks();
+      }
+    }
+  }
+}
+
+function createQuickReminder() {
+  const text = prompt("What do you want to be reminded about?");
+  if (!text) return;
+
+  const time = prompt("What time? (HH:MM format, 24-hour clock)");
+  if (!time || !/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(time)) {
+    alert("Invalid time format. Please use HH:MM (e.g., 14:30)");
+    return;
+  }
+
+  const t = {
+    id: 't_' + Date.now(),
+    text: text.trim(),
+    cat: activeTab === 'all' ? 'today' : activeTab, // default to current tab
+    priority: 'medium',
+    done: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    reminderTime: time
+  };
+
+  tasks.push(t);
+  save();
+  pushTaskToSupabase(t);
+  renderTabs();
+  renderTasks();
+  updateProgress();
+  showNotification('Reminder Set', `Will remind you about "${t.text}" at ${time}`);
+}
 function updateProgress() {
   const total = tasks.filter(t => !t.daily || t.cat === 'today').length;
   const done = tasks.filter(t => t.done).length;
