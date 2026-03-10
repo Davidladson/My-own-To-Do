@@ -2353,7 +2353,6 @@ function renderSync() {
     <div class="sync-card">
       <h3>Active Task Reminders</h3>
       <p style="margin-bottom:12px; font-size: 13px; color: var(--text-muted)">You can set custom reminder times for any task by using the <strong>Remind me at</strong> input when creating or editing a task. Perfect for scheduling specific meetings or time blocks.</p>
-      ${renderSoundSettings()}
     </div>`;
   }
 
