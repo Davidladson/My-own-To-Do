@@ -2525,7 +2525,7 @@ function parseTasksMd(content) {
 
     // Detect section headers
     if (trimmed.startsWith('## ')) {
-      const header = trimmed.replace('## ', '').replace(/ \(.*\)/, '').toLowerCase().trim();
+      const header = trimmed.replace(/^## /, '').replace(/ \(.*\)/, '').toLowerCase().trim();
       if (catMap[header]) currentCat = catMap[header];
       continue;
     }
@@ -2832,6 +2832,11 @@ function clearDefaultTasks() {
   if (!confirm(`Found ${toDelete.length} original sample task${toDelete.length > 1 ? 's' : ''} from the initial setup. Remove them?\n\nYour TASKS.md tasks will stay.`)) return;
 
   toDelete.forEach(t => {
+    // Add to deleted list first so auto-import ignores them
+    const normalize = s => s.replace(/\*+/g, '').replace(/\|\s*remind:\s*\d{1,2}:\d{2}/gi, '').toLowerCase().trim();
+    deletedTaskTexts.add(normalize(t.text));
+    localStorage.setItem(DELETED_TASKS_KEY, JSON.stringify(Array.from(deletedTaskTexts)));
+
     tasks = tasks.filter(x => x.id !== t.id);
     deleteTaskFromSupabase(t.id);
   });
