@@ -2274,8 +2274,6 @@ function renderSync() {
   }
   el.style.display = 'block';
 
-  const reminders = loadReminderSettings();
-
   // Determine if we show the Desktop-only Claude integration section.
   // We check for native File Access API support AND ensure the user isn't on a mobile device,
   // because mobile PWAs don't need local workspace folder connections.
