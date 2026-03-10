@@ -2367,6 +2367,11 @@ function renderSync() {
       <div id="dedupeStatus" class="sync-status"></div>
     </div>
     <div class="sync-card">
+      <h3>Force App Update (Mobile Fix)</h3>
+      <p>If your mobile app is stuck on an old version with missing features, clicking this will clear the app's structural cache and refresh.</p>
+      <button class="sync-btn remove" onclick="forceAppUpdate()">Force App Update</button>
+    </div>
+    <div class="sync-card">
       <h3>Clear Default Tasks</h3>
       <p>Removes the original sample tasks that were loaded when you first opened the app. Use this if you have too many tasks from the initial setup.</p>
       <button class="sync-btn remove" onclick="clearDefaultTasks()">Clear Default Tasks</button>
@@ -2465,6 +2470,23 @@ function renderSync() {
 
   el.innerHTML = html;
   renderClaudeNotesList();
+}
+
+// ===================== FORCE APP UPDATE =====================
+async function forceAppUpdate() {
+  if ('serviceWorker' in navigator) {
+    try {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (let reg of registrations) { await reg.unregister(); }
+      const keys = await caches.keys();
+      for (let key of keys) { await caches.delete(key); }
+      window.location.href = window.location.href.split('?')[0] + '?update=' + new Date().getTime();
+    } catch (err) {
+      window.location.reload(true);
+    }
+  } else {
+    window.location.reload(true);
+  }
 }
 
 // ===================== IMPORT FROM TASKS.MD =====================
