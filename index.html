@@ -66,15 +66,15 @@
     </div>
 
     <div class="tabs" id="tabsContainer"></div>
-    <div id="quickCapture" class="quick-capture" style="display:none; gap: 8px;">
+    <div id="quickCapture" class="quick-capture" style="display:none">
       <input type="text" id="quickCaptureInput" placeholder="Quick add a task..."
-        onkeydown="if(event.key==='Enter')quickAdd()" style="flex: 1;">
-      <button class="quick-reminder-btn" onclick="createQuickReminder()" title="Create Standalone Reminder">🔔 Reminder</button>
+        onkeydown="if(event.key==='Enter')quickAdd()">
     </div>
     <div id="reviewPrompt"></div>
     <div class="task-list" id="taskList"></div>
     <div class="playbook-section" id="playbookSection"></div>
     <div class="sync-section" id="syncSection" style="display:none"></div>
+    <div class="reminders-section" id="remindersSection" style="display:none"></div>
 
     <button class="fab" id="fabBtn" onclick="openAddModal()">+</button>
 
@@ -92,6 +92,7 @@
           <option value="before-pilot">Before First Pilot</option>
           <option value="waiting">Waiting On</option>
           <option value="someday">Someday</option>
+          <option value="reminders">Standalone Reminder</option>
         </select>
         <label>Priority</label>
         <select id="priorityInput">

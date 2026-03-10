@@ -1508,48 +1508,130 @@
       border-color: var(--accent);
     }
 
-    /* ===================== TASK REMINDER UI ===================== */
-    .task-bell-btn {
-      background: rgba(255, 255, 255, 0.05);
-      color: var(--text-dim);
-      border: none;
-      border-radius: 8px;
-      padding: 6px 10px;
-      font-size: 14px;
-      cursor: pointer;
+    /* ===================== TIMELINE & REMINDERS HUB ===================== */
+    .timeline-container {
       display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.2s;
-      flex-shrink: 0;
+      flex-direction: column;
+      position: relative;
+      padding: 12px 0;
+      background: var(--card);
+      border-radius: 16px;
+      border: 1px solid var(--border);
     }
 
-    .task-bell-btn:hover {
-      background: rgba(255, 255, 255, 0.1);
+    .timeline-row {
+      display: flex;
+      min-height: 64px;
+      cursor: pointer;
+      position: relative;
+      transition: background 0.2s;
+    }
+
+    .timeline-row:hover {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .timeline-row:active {
+      background: var(--card-hover);
+    }
+
+    .timeline-time {
+      width: 60px;
+      flex-shrink: 0;
+      text-align: right;
+      padding: 12px 12px 12px 0;
+      /* right padding to align with dot */
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      justify-content: flex-start;
+      margin-left: 12px;
+    }
+
+    .tl-hr {
+      font-size: 15px;
+      font-weight: 700;
       color: var(--text);
+      line-height: 1.1;
     }
 
-    .task-bell-btn.active {
-      background: rgba(251, 191, 36, 0.15);
-      color: var(--yellow);
-    }
-
-    .quick-reminder-btn {
-      background: rgba(251, 191, 36, 0.15);
-      color: var(--yellow);
-      border: 1px solid rgba(251, 191, 36, 0.3);
-      border-radius: 12px;
-      padding: 0 16px;
-      font-size: 14px;
+    .tl-ampm {
+      font-size: 10px;
       font-weight: 600;
-      cursor: pointer;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+
+    .timeline-divider {
+      position: relative;
+      width: 24px;
       display: flex;
-      align-items: center;
-      gap: 6px;
-      transition: all 0.2s;
+      justify-content: center;
       flex-shrink: 0;
     }
 
-    .quick-reminder-btn:active {
-      transform: scale(0.95);
+    /* the continuous vertical line */
+    .timeline-divider::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 11px;
+      width: 2px;
+      background: var(--border);
+      z-index: 1;
+    }
+
+    /* Hide top half of line for first item, bottom half for last item */
+    .timeline-row:first-child .timeline-divider::after {
+      top: 18px;
+      /* start at the dot */
+    }
+
+    .timeline-row:last-child .timeline-divider::after {
+      bottom: calc(100% - 18px);
+      /* end at the dot */
+    }
+
+    .timeline-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--card);
+      border: 3px solid var(--accent);
+      position: absolute;
+      top: 12px;
+      left: 5px;
+      z-index: 2;
+    }
+
+    .timeline-dot.standalone {
+      border-color: var(--yellow);
+      background: rgba(251, 191, 36, 0.2);
+    }
+
+    .timeline-dot.task {
+      border-color: var(--green);
+    }
+
+    .timeline-content {
+      padding: 10px 16px 16px 16px;
+      flex: 1;
+    }
+
+    .timeline-title {
+      font-size: 15px;
+      color: var(--text);
+      font-weight: 500;
+      line-height: 1.4;
+      margin-bottom: 4px;
+    }
+
+    .timeline-meta {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
     }
