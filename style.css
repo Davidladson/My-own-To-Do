@@ -245,6 +245,18 @@
       transition: all 0.2s;
       margin-top: 1px;
       cursor: pointer;
+      position: relative;
+    }
+
+    /* Expand clickable area to at least 44x44px for adequate mobile touch targets */
+    .checkbox::before {
+      content: '';
+      position: absolute;
+      top: -8px;
+      bottom: -8px;
+      left: -8px;
+      right: -8px;
+      border-radius: 50%;
     }
 
     .checkbox:active {

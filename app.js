@@ -19,6 +19,7 @@ let currentUser = null;
 let realtimeChannel = null;
 let isSyncing = false;
 let deletedTaskTexts = new Set();
+let workspaceDirHandle = null;
 
 try {
   sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -2621,7 +2622,6 @@ function parseTasksMd(content) {
 }
 
 // ===================== WORKSPACE AUTO-SYNC (File System Access API) =====================
-let workspaceDirHandle = null;
 let autoImportInterval = null;
 
 // IndexedDB helpers for storing the directory handle across sessions
