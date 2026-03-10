@@ -1691,34 +1691,6 @@ function getTaskTips(t) {
   return null;
 }
 
-// ===================== NOTIFICATIONS & REMINDERS =====================
-const DEFAULT_REMINDERS = {
-  morning: { time: '05:55', enabled: true, label: 'Deep Work 1', body: 'DW1 starts now. Phone on DND. Hardest task first. 60 minutes.' },
-  dw2: { time: '07:15', enabled: true, label: 'Deep Work 2', body: 'DW2 starts now. 40 minutes. Second priority task before college.' },
-  breakfast: { time: '07:50', enabled: true, label: 'Eat Breakfast', body: 'Eat now before college. Protein if possible. Skipping = energy crash by 11am.' },
-  lunch: { time: '12:30', enabled: true, label: 'Lunch', body: 'Eat a proper lunch. Long hunger gap kills your Power Block. Do not skip.' },
-  postcollegefuel: { time: '16:50', enabled: true, label: 'Post-College Fuel', body: 'Eat a snack before exercise. Fuel your body before Power Block starts.' },
-  evening: { time: '18:00', enabled: true, label: 'Power Block', body: 'Power Block now. 90 minutes of focused Malveon work. Most important block of your day.' },
-  english: { time: '20:15', enabled: true, label: 'English Practice', body: '30 min out loud. Pitch Malveon. Explain a feature. Describe your day. Record 2x/week.' },
-  night: { time: '21:30', enabled: true, label: 'Night Review', body: 'Score your day /10. Write 3 bullets: 1 Win, 1 Learning, 1 Tomorrow task.' }
-};
-
-function loadReminderSettings() {
-  const saved = localStorage.getItem(REMINDERS_KEY);
-  const defaults = JSON.parse(JSON.stringify(DEFAULT_REMINDERS));
-  if (!saved) return defaults;
-  const parsed = JSON.parse(saved);
-  // Merge: add any new slots from defaults that are missing in saved settings
-  for (const slot of Object.keys(defaults)) {
-    if (!parsed[slot]) parsed[slot] = defaults[slot];
-  }
-  return parsed;
-}
-
-function saveReminderSettings(reminders) {
-  localStorage.setItem(REMINDERS_KEY, JSON.stringify(reminders));
-}
-
 // ===================== NOTIFICATION COUNT =====================
 function getNotifCount() {
   const saved = localStorage.getItem(NOTIF_COUNT_KEY);
@@ -1845,7 +1817,7 @@ function testReminderSound() {
   playReminderSound(loadSoundSettings().type);
 }
 
-function renderSoundSettings(reminders) {
+function renderSoundSettings() {
   const s = loadSoundSettings();
   return `
       <div class="sound-divider"></div>
@@ -1892,12 +1864,6 @@ function renderClaudeNotesList() {
         </div>`).join('');
 }
 
-function updateReminder(slot, field, value) {
-  const reminders = loadReminderSettings();
-  reminders[slot][field] = value;
-  saveReminderSettings(reminders);
-}
-
 async function requestNotifPermission() {
   if (!('Notification' in window)) {
     alert('Notifications are not supported in this browser.');
@@ -1905,7 +1871,7 @@ async function requestNotifPermission() {
   }
   const result = await Notification.requestPermission();
   if (result === 'granted') {
-    showNotification('Malveon Tasks', 'Notifications enabled! You will get reminders for deep work, power block, and night review.');
+    showNotification('Malveon Tasks', 'Notifications enabled! You will now get reminders for tasks where you set "Remind me at" times.');
     renderSync(); // refresh to show settings
   } else {
     alert('Notification permission was denied. You can change this in your browser settings.');
@@ -1962,18 +1928,7 @@ function checkReminders() {
   // Prevent firing same minute twice
   if (currentTime === lastFiredMinute) return;
 
-  const reminders = loadReminderSettings();
-
   let firedAny = false;
-
-  // Check scheduled reminders
-  for (const [slot, config] of Object.entries(reminders)) {
-    if (config.enabled && config.time === currentTime) {
-      showNotification('Malveon Tasks - ' + config.label, config.body);
-      if (!firedAny) { playReminderSound(); firedAny = true; incrementNotifCount(); }
-      lastFiredMinute = currentTime;
-    }
-  }
 
   // Check per-task reminders (today + daily habits)
   const todayTasks = tasks.filter(t => (t.cat === 'today' || t.cat === 'daily-habits') && !t.done && t.reminderTime);
@@ -2322,40 +2277,9 @@ function renderSync() {
   if ('Notification' in window && Notification.permission === 'granted') {
     html += `
     <div class="sync-card">
-      <h3>Daily Reminders</h3>
-      <div class="reminder-row">
-        <label><input type="checkbox" ${reminders.morning.enabled ? 'checked' : ''} onchange="updateReminder('morning', 'enabled', this.checked)"> Deep Work 1 (05:55)</label>
-        <input type="time" value="${reminders.morning.time}" onchange="updateReminder('morning', 'time', this.value)">
-      </div>
-      <div class="reminder-row">
-        <label><input type="checkbox" ${reminders.dw2.enabled ? 'checked' : ''} onchange="updateReminder('dw2', 'enabled', this.checked)"> Deep Work 2 (07:15)</label>
-        <input type="time" value="${reminders.dw2.time}" onchange="updateReminder('dw2', 'time', this.value)">
-      </div>
-      <div class="reminder-row">
-        <label><input type="checkbox" ${reminders.breakfast.enabled ? 'checked' : ''} onchange="updateReminder('breakfast', 'enabled', this.checked)"> Eat Breakfast (07:50)</label>
-        <input type="time" value="${reminders.breakfast.time}" onchange="updateReminder('breakfast', 'time', this.value)">
-      </div>
-      <div class="reminder-row">
-        <label><input type="checkbox" ${reminders.lunch.enabled ? 'checked' : ''} onchange="updateReminder('lunch', 'enabled', this.checked)"> Lunch (12:30)</label>
-        <input type="time" value="${reminders.lunch.time}" onchange="updateReminder('lunch', 'time', this.value)">
-      </div>
-      <div class="reminder-row">
-        <label><input type="checkbox" ${reminders.postcollegefuel.enabled ? 'checked' : ''} onchange="updateReminder('postcollegefuel', 'enabled', this.checked)"> Post-College Fuel (16:50)</label>
-        <input type="time" value="${reminders.postcollegefuel.time}" onchange="updateReminder('postcollegefuel', 'time', this.value)">
-      </div>
-      <div class="reminder-row">
-        <label><input type="checkbox" ${reminders.evening.enabled ? 'checked' : ''} onchange="updateReminder('evening', 'enabled', this.checked)"> Power Block (18:00)</label>
-        <input type="time" value="${reminders.evening.time}" onchange="updateReminder('evening', 'time', this.value)">
-      </div>
-      <div class="reminder-row">
-        <label><input type="checkbox" ${reminders.english.enabled ? 'checked' : ''} onchange="updateReminder('english', 'enabled', this.checked)"> English Practice (20:15)</label>
-        <input type="time" value="${reminders.english.time}" onchange="updateReminder('english', 'time', this.value)">
-      </div>
-      <div class="reminder-row">
-        <label><input type="checkbox" ${reminders.night.enabled ? 'checked' : ''} onchange="updateReminder('night', 'enabled', this.checked)"> Night Review (21:30)</label>
-        <input type="time" value="${reminders.night.time}" onchange="updateReminder('night', 'time', this.value)">
-      </div>
-      ${renderSoundSettings(reminders)}
+      <h3>Active Task Reminders</h3>
+      <p style="margin-bottom:12px; font-size: 13px; color: var(--text-muted)">You can set custom reminder times for any task by using the <strong>Remind me at</strong> input when creating or editing a task. Perfect for scheduling specific meetings or time blocks.</p>
+      ${renderSoundSettings()}
     </div>`;
   }
 
