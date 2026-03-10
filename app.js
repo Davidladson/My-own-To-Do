@@ -2654,13 +2654,34 @@ async function autoImportFromWorkspace(handle) {
 
     // Normalize text: strip bold markers AND leftover | remind:HH:MM so re-importing won't create duplicates
     const normalize = s => s.replace(/\*+/g, '').replace(/\|\s*remind:\s*\d{1,2}:\d{2}/gi, '').toLowerCase().trim();
-    const existingTexts = tasks.map(t => normalize(t.text));
-    const newTasks = parsed.filter(p =>
-      !existingTexts.includes(normalize(p.text)) && !deletedTaskTexts.has(normalize(p.text)) && p.cat !== 'done'
-    );
 
-    if (newTasks.length > 0) {
-      newTasks.forEach(p => {
+    // Map existing tasks by normalized text
+    const existingTextsMap = {};
+    tasks.forEach(t => existingTextsMap[normalize(t.text)] = t);
+
+    let newCount = 0;
+    let upCount = 0;
+
+    parsed.forEach(p => {
+      const normText = normalize(p.text);
+      if (deletedTaskTexts.has(normText) || p.cat === 'done') return;
+
+      const existingTask = existingTextsMap[normText];
+      if (existingTask) {
+        // Sync properties if they drift (e.g., categories changed in TASKS.md)
+        let changed = false;
+        if (existingTask.cat !== p.cat) { existingTask.cat = p.cat; changed = true; }
+        if (existingTask.priority !== p.priority) { existingTask.priority = p.priority; changed = true; }
+        if (existingTask.daily !== p.daily) { existingTask.daily = p.daily; changed = true; }
+        if (existingTask.reminderTime !== p.reminderTime) { existingTask.reminderTime = p.reminderTime; changed = true; }
+
+        if (changed) {
+          existingTask.updatedAt = new Date().toISOString();
+          pushTaskToSupabase(existingTask);
+          upCount++;
+        }
+      } else {
+        // Create genuinely new task
         const newTask = {
           id: uid(), text: p.text, cat: p.cat, priority: p.priority,
           done: false, notes: '', daily: p.daily,
@@ -2670,10 +2691,14 @@ async function autoImportFromWorkspace(handle) {
         };
         tasks.push(newTask);
         pushTaskToSupabase(newTask);
-      });
+        newCount++;
+      }
+    });
+
+    if (newCount > 0 || upCount > 0) {
       save(); renderTabs(); renderView(); updateProgress();
     }
-    return newTasks.length;
+    return newCount + upCount;
   } catch (e) {
     console.log('Auto-import error:', e.message);
     return 0;
