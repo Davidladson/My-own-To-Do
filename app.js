@@ -341,14 +341,12 @@ async function syncFromSupabase() {
     const { data: remoteTasks, error: tErr } = await sb.from('tasks')
       .select('*').eq('user_id', currentUser.id);
     if (!tErr && remoteTasks) {
+      // 1. Clean incoming data
       remoteTasks.forEach(r => {
         if (r.text) {
-          // Extract reminderTime from old-format text before sanitizing
           if (!r.reminder_time) {
             const remindMatch = r.text.match(/\|\s*remind:\s*(\d{1,2}:\d{2})/i);
-            if (remindMatch) {
-              r.reminder_time = remindMatch[1];
-            }
+            if (remindMatch) r.reminder_time = remindMatch[1];
           }
           const cleanText = sanitizeTaskText(r.text);
           if (cleanText !== r.text) {
@@ -359,6 +357,25 @@ async function syncFromSupabase() {
           }
         }
       });
+
+      // 2. Identify local tasks that don't exist in Supabase anymore (orphans)
+      const remoteIds = new Set(remoteTasks.map(r => r.id));
+      const localOrphans = tasks.filter(t => !remoteIds.has(t.id));
+
+      if (localOrphans.length > 0) {
+        // If we have local orphans, AND we are online, check if these tasks were created *after* the last sync.
+        // If they are older tasks that just vanished from the DB, it means they were deleted elsewhere!
+        const tenMinutesAgo = new Date(Date.now() - 10 * 60000).toISOString();
+        const staleOrphans = localOrphans.filter(t => t.updatedAt < tenMinutesAgo);
+
+        if (staleOrphans.length > 0) {
+          // Remove stale orphans locally
+          const staleIds = new Set(staleOrphans.map(t => t.id));
+          tasks = tasks.filter(t => !staleIds.has(t.id));
+        }
+      }
+
+      // 3. Merge remaining local map and remote map
       const localMap = {};
       tasks.forEach(t => { localMap[t.id] = t; });
 
@@ -367,10 +384,8 @@ async function syncFromSupabase() {
         remoteMap[r.id] = r;
         const local = localMap[r.id];
         if (!local) {
-          // Exists in remote but not local - pull down
           tasks.push(rowToTask(r));
         } else {
-          // Exists in both - keep newer
           const remoteTime = new Date(r.updated_at).getTime();
           const localTime = new Date(local.updatedAt || 0).getTime();
           if (remoteTime > localTime) {
@@ -379,23 +394,19 @@ async function syncFromSupabase() {
         }
       });
 
-      // Build a set of existing task texts (from remote) for dedup
+      // 4. Push genuinely new offline local tasks to remote
       const existingTexts = new Set();
       tasks.forEach(t => {
-        // Only add tasks that came from remote (exist in remoteMap)
         if (remoteMap[t.id]) existingTexts.add(t.text.trim().toLowerCase());
       });
 
-      // Push local-only tasks to remote, but skip text duplicates
       const localOnlyToRemove = [];
       for (const t of tasks) {
         if (!remoteMap[t.id]) {
           const textKey = t.text.trim().toLowerCase();
           if (existingTexts.has(textKey)) {
-            // This local task is a duplicate by text — mark for removal
             localOnlyToRemove.push(t.id);
           } else {
-            // Genuinely new local task — push to remote
             existingTexts.add(textKey);
             t.updatedAt = t.updatedAt || new Date().toISOString();
             const row = taskToRow(t);
@@ -406,7 +417,6 @@ async function syncFromSupabase() {
         }
       }
 
-      // Remove local text-duplicates that were not pushed
       if (localOnlyToRemove.length > 0) {
         tasks = tasks.filter(t => !localOnlyToRemove.includes(t.id));
       }
