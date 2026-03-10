@@ -2361,6 +2361,12 @@ function renderSync() {
       <p>Removes the original sample tasks that were loaded when you first opened the app. Use this if you have too many tasks from the initial setup.</p>
       <button class="sync-btn remove" onclick="clearDefaultTasks()">Clear Default Tasks</button>
       <div id="clearDefaultStatus" class="sync-status"></div>
+    </div>
+    <div class="sync-card">
+      <h3>Force Sync with TASKS.md</h3>
+      <p>Wipes all local tasks (and cloud) and cleanly re-imports exactly what is currently written in your TASKS.md file. Fixes zombie tasks.</p>
+      <button class="sync-btn remove" onclick="forceSyncTasks()">Force Sync</button>
+      <div id="forceSyncStatus" class="sync-status"></div>
     </div>`;
 
   html += '</div>';
@@ -2873,6 +2879,50 @@ function clearDefaultTasks() {
     statusEl.textContent = `Removed ${toDelete.length} default task${toDelete.length > 1 ? 's' : ''}.`;
     statusEl.style.display = 'block';
     setTimeout(() => statusEl.style.display = 'none', 4000);
+  }
+}
+
+async function forceSyncTasks() {
+  if (!confirm('This will wipe all current tasks from the app and the cloud, then re-import them directly from TASKS.md.\n\nAre you sure you want to force sync?')) return;
+
+  const statusEl = document.getElementById('forceSyncStatus');
+  if (statusEl) {
+    statusEl.textContent = 'Wiping tasks...';
+    statusEl.style.display = 'block';
+  }
+
+  // Clear local arrays and storage first
+  tasks = [];
+  deletedTaskTexts.clear();
+  localStorage.removeItem(DELETED_TASKS_KEY);
+  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(QUEUE_KEY);
+
+  // Wipe from Supabase
+  if (currentUser && sb && navigator.onLine) {
+    try {
+      const { data, error } = await sb.from('tasks').select('id').eq('user_id', currentUser.id);
+      if (!error && data) {
+        for (const t of data) {
+          await sb.from('tasks').delete().eq('id', t.id);
+        }
+      }
+    } catch (e) { console.log('Wipe error', e); }
+  }
+
+  save(); // Save the empty state
+  renderTabs(); renderView(); updateProgress();
+
+  if (workspaceDirHandle) {
+    if (statusEl) statusEl.textContent = 'Re-importing from TASKS.md...';
+    await autoImportFromWorkspace(workspaceDirHandle);
+    if (statusEl) {
+      statusEl.textContent = 'Sync complete! Loaded tasks from file.';
+      setTimeout(() => statusEl.style.display = 'none', 4000);
+    }
+  } else {
+    alert('Tasks wiped. Please click "Connect Folder" above to re-import your TASKS.md file.');
+    if (statusEl) statusEl.style.display = 'none';
   }
 }
 
