@@ -723,11 +723,12 @@ function rowToLog(r) {
 function v2TaskRow(task) {
   const doneClass = task.done ? ' done' : '';
   const checkClass = task.done ? ' checked' : '';
+  const priClass = task.priority ? ` ${task.priority}-left` : '';
   const priBadge = priorityBadge(task.priority);
   const subtaskInfo = (task.subtasks && task.subtasks.length > 0) ?
     `<span class="subtask-inline">${task.subtasks.filter(s => s.done).length}/${task.subtasks.length} sub</span>` : '';
   const reminderTag = task.reminderTime ? `<span class="rec-tag">⏰ ${task.reminderTime}</span>` : '';
-  return `<div class="v2-task-row${doneClass}" data-id="${task.id}" onclick="openTaskDetail('${task.id}')">
+  return `<div class="v2-task-row${doneClass}${priClass}" data-id="${task.id}" onclick="openTaskDetail('${task.id}')">
     <div class="v2-task-check${checkClass}" onclick="event.stopPropagation();toggleTask('${task.id}')"></div>
     <div class="v2-task-content">
       <div class="v2-task-text">${task.text}</div>
@@ -739,6 +740,7 @@ function v2TaskRow(task) {
 function v2TaskRowWithTimer(task) {
   const doneClass = task.done ? ' done' : '';
   const checkClass = task.done ? ' checked' : '';
+  const priClass = task.priority ? ` ${task.priority}-left` : '';
   const priBadge = priorityBadge(task.priority);
   const subtaskInfo = (task.subtasks && task.subtasks.length > 0) ?
     `<span class="subtask-inline">${task.subtasks.filter(s => s.done).length}/${task.subtasks.length} sub</span>` : '';
@@ -760,7 +762,7 @@ function v2TaskRowWithTimer(task) {
       </div>`;
   }
 
-  return `<div class="v2-task-row${doneClass}${focusClass}" data-id="${task.id}" onclick="isFocus ? null : openTaskDetail('${task.id}')">
+  return `<div class="v2-task-row${doneClass}${focusClass}${priClass}" data-id="${task.id}" onclick="isFocus ? null : openTaskDetail('${task.id}')">
     <div class="v2-task-check${checkClass}" onclick="event.stopPropagation();toggleTask('${task.id}')"></div>
     <div class="v2-task-content" ${!isFocus ? `onclick="startFocusTimer('${task.id}')"` : ''}>
       <div class="v2-task-text">${task.text}</div>
@@ -3284,17 +3286,17 @@ function renderTasks() {
     const subsTotal = subs.length;
     const streakVal = t.streak || 0;
     return `
-    <div class="task-item ${t.done ? 'done' : ''}">
+    <div class="task-item ${t.done ? 'done' : ''} ${t.priority || 'low'}-left">
       <div class="checkbox ${t.done ? 'checked' : ''}" onclick="event.stopPropagation();toggleTask('${t.id}')"></div>
       <div class="task-content" onclick="openTaskDetail('${t.id}')">
         <div class="task-text">${esc(t.text)}</div>
         <div class="task-meta">
-          <span class="tag priority-${t.priority}">${t.priority}</span>
-          ${t.daily ? '<span class="tag category">daily</span>' : ''}
-          ${t.notes ? '<span class="tag category">has details</span>' : ''}
+          <span class="badge ${t.priority || 'low'}">${t.priority}</span>
+          ${t.daily ? '<span class="badge blue">daily</span>' : ''}
+          ${t.notes ? '<span class="badge gray">has details</span>' : ''}
           ${subsTotal > 0 ? `<span class="subtask-inline">${subsDone}/${subsTotal}</span>` : ''}
-          ${t.daily && streakVal > 2 ? `<span class="streak-badge">${streakVal}d</span>` : ''}
-          ${t.reminderTime ? `<span class="bell-icon" title="Reminder at ${t.reminderTime}">&#128276; ${t.reminderTime}</span>` : ''}
+          ${t.daily && streakVal >= 1 ? `<span class="rec-tag">🔥 ${streakVal}d</span>` : ''}
+          ${t.reminderTime ? `<span class="rec-tag">⏰ ${t.reminderTime}</span>` : ''}
         </div>
       </div>
     </div>`;
@@ -3351,13 +3353,13 @@ function checkReviewPrompt() {
   const hasReview = todayEntry && todayEntry.review;
 
   if (pct >= 60 && !hasReview) {
-    el.innerHTML = `<div class="review-prompt">
-      <p>You have completed ${pct}% of today's tasks. Time for your daily self-review?</p>
-      <button onclick="openReviewModal()">Write Review</button>
+    el.innerHTML = `<div class="review-prompt" style="background:var(--purple-50); border:1px solid var(--purple-100);">
+      <p style="color:var(--purple-900);">You have completed ${pct}% of today's tasks. Time for your daily self-review?</p>
+      <button style="background:var(--accent); color:#fff; border:none; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:700; cursor:pointer;" onclick="openReviewModal()">Write Review</button>
     </div>`;
   } else if (hasReview) {
-    el.innerHTML = `<div class="review-prompt" style="border-color:var(--green);background:linear-gradient(135deg,#0f1f0f,#1a1a1a)">
-      <p style="color:var(--green)">Today's review saved. Score: ${todayEntry.score}/10 | E:${todayEntry.review.energy} F:${todayEntry.review.focus} X:${todayEntry.review.exec}</p>
+    el.innerHTML = `<div class="review-prompt" style="border-color:var(--green); background:var(--teal-50);">
+      <p style="color:var(--teal-800);">Today's review saved. Score: ${todayEntry.score}/10 | E:${todayEntry.review.energy} F:${todayEntry.review.focus} X:${todayEntry.review.exec}</p>
     </div>`;
   } else {
     el.innerHTML = '';
@@ -3890,17 +3892,17 @@ function renderWorkload() {
         data: {
           labels: last7.map(e => { const d = new Date(e.date + 'T12:00:00'); return d.toLocaleDateString('en', { weekday: 'short' }); }),
           datasets: [
-            { label: 'High', data: highData, backgroundColor: 'rgba(248,113,113,0.7)', borderRadius: 3, barPercentage: 0.6 },
-            { label: 'Medium', data: medData, backgroundColor: 'rgba(251,191,36,0.7)', borderRadius: 3, barPercentage: 0.6 },
-            { label: 'Low', data: lowData, backgroundColor: 'rgba(96,165,250,0.5)', borderRadius: 3, barPercentage: 0.6 }
+            { label: 'High', data: highData, backgroundColor: '#E24B4A', borderRadius: 3, barPercentage: 0.6 },
+            { label: 'Medium', data: medData, backgroundColor: '#EF9F27', borderRadius: 3, barPercentage: 0.6 },
+            { label: 'Low', data: lowData, backgroundColor: '#378ADD', borderRadius: 3, barPercentage: 0.6 }
           ]
         },
         options: {
           responsive: true,
-          plugins: { legend: { display: true, position: 'bottom', labels: { color: 'rgba(255,255,255,0.4)', boxWidth: 12 } } },
+          plugins: { legend: { display: true, position: 'bottom', labels: { color: '#6B686B', boxWidth: 12 } } },
           scales: {
-            x: { stacked: true, ticks: { color: 'rgba(255,255,255,0.3)' }, grid: { display: false } },
-            y: { stacked: true, beginAtZero: true, ticks: { color: 'rgba(255,255,255,0.3)', stepSize: 1 }, grid: { color: 'rgba(255,255,255,0.05)' } }
+            x: { stacked: true, ticks: { color: '#888780' }, grid: { display: false } },
+            y: { stacked: true, beginAtZero: true, ticks: { color: '#888780', stepSize: 1 }, grid: { color: '#F0EFEB' } }
           }
         }
       });
@@ -3926,15 +3928,15 @@ function renderDecisionsV2() {
     </div>
 
     <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:20px;">
-      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid rgba(255,255,255,0.04);">
+      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid var(--border);">
         <div style="font-size:22px; font-weight:800; color:var(--accent);">${decisions.length}</div>
         <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Total</div>
       </div>
-      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid rgba(255,255,255,0.04);">
+      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid var(--border);">
         <div style="font-size:22px; font-weight:800; color:var(--green-400);">${sorted.filter(d => { const diff = (Date.now() - new Date(d.date).getTime()) / 86400000; return diff < 7; }).length}</div>
         <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">This Week</div>
       </div>
-      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid rgba(255,255,255,0.04);">
+      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid var(--border);">
         <div style="font-size:22px; font-weight:800;">${[...new Set(decisions.map(d => d.domain))].length}</div>
         <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Domains</div>
       </div>
@@ -3946,12 +3948,15 @@ function renderDecisionsV2() {
     sorted.forEach(d => {
       const date = new Date(d.date + 'T12:00:00');
       const dateStr = date.toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' });
-      const color = domainColors[d.domain] || '#534AB7';
-      html += `<div class="v2-task-row" style="border-left:3px solid ${color}; border:1px solid rgba(255,255,255,0.04);">
+      const color600 = domainColors[d.domain] || '#534AB7';
+      const color50 = (d.domain === 'ops' ? '#EEEDFE' : d.domain === 'product' ? '#E1F5EE' : d.domain === 'sales' ? '#FAEEDA' : '#EEEDFE');
+      const color800 = (d.domain === 'ops' ? '#3C3489' : d.domain === 'product' ? '#0B5041' : d.domain === 'sales' ? '#854F0B' : '#3C3489');
+
+      html += `<div class="v2-task-row" style="border-left:3px solid ${color600}; background:${color50}; border:1px solid var(--border);">
         <div class="v2-task-content" style="flex:1;">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
-            <div class="v2-task-text" style="font-size:15px; font-weight:700; line-height:1.4; flex:1;">${esc(d.decision)}</div>
-            <span style="font-size:10px; padding:3px 8px; border-radius:999px; background:${color}22; color:${color}; white-space:nowrap; margin-left:8px;">${d.domain || 'ops'}</span>
+            <div class="v2-task-text" style="font-size:15px; font-weight:700; color:${color800}; line-height:1.4; flex:1;">${esc(d.decision)}</div>
+            <span style="font-size:10px; padding:3px 8px; border-radius:999px; background:${color600}; color:#fff; white-space:nowrap; margin-left:8px;">${d.domain || 'ops'}</span>
           </div>
           ${d.reason ? `<div style="font-size:12px; color:var(--text-dim); margin-bottom:6px; line-height:1.5;"><strong>Why:</strong> ${esc(d.reason)}</div>` : ''}
           <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-muted);">
@@ -4011,7 +4016,7 @@ function renderDelegationV2() {
   const done = delegations.filter(d => d.status === 'done').length;
   const blocked = delegations.filter(d => d.status === 'blocked').length;
 
-  const statusColors = { 'not-started': '#6B7280', 'in-progress': '#534AB7', 'blocked': '#F87171', 'done': '#34D399' };
+  const statusColors = { 'not-started': '#6B686B', 'in-progress': '#534AB7', 'blocked': '#E24B4A', 'done': '#1D9E75' };
   const statusLabels = { 'not-started': 'Not Started', 'in-progress': 'In Progress', 'blocked': 'Blocked', 'done': 'Done' };
 
   let html = `<div style="padding:0 16px 100px;">
@@ -4021,19 +4026,19 @@ function renderDelegationV2() {
     </div>
 
     <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:20px;">
-      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid rgba(255,255,255,0.04);">
+      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid var(--border);">
         <div style="font-size:22px; font-weight:800; color:#6B7280;">${notStarted}</div>
         <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Pending</div>
       </div>
-      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid rgba(255,255,255,0.04);">
+      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid var(--border);">
         <div style="font-size:22px; font-weight:800; color:var(--accent);">${inProgress}</div>
         <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Active</div>
       </div>
-      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid rgba(255,255,255,0.04);">
+      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid var(--border);">
         <div style="font-size:22px; font-weight:800; color:var(--red-400);">${blocked}</div>
         <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Blocked</div>
       </div>
-      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid rgba(255,255,255,0.04);">
+      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid var(--border);">
         <div style="font-size:22px; font-weight:800; color:var(--green-400);">${done}</div>
         <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Done</div>
       </div>
@@ -4048,7 +4053,7 @@ function renderDelegationV2() {
       const isOverdue = d.dueDate && new Date(d.dueDate) < new Date() && d.status !== 'done';
 
       html += `
-      <div class="v2-task-row" style="border:1px solid rgba(255,255,255,0.04); ${isOverdue ? 'border-left:3px solid var(--red-400);' : ''}">
+      <div class="v2-task-row" style="border:1px solid var(--border); ${isOverdue ? 'border-left:3px solid var(--red-400);' : ''}">
         <div class="v2-task-content" style="flex:1;">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
             <div class="v2-task-text" style="font-size:14px; font-weight:700; flex:1;">${esc(d.task)}</div>
@@ -4133,15 +4138,15 @@ function renderReviewV2() {
     </div>
 
     <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:20px;">
-      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid rgba(255,255,255,0.04);">
+      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid var(--border);">
         <div style="font-size:22px; font-weight:800; color:var(--amber-400);">⚡ ${avgEnergy}</div>
         <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Avg Energy</div>
       </div>
-      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid rgba(255,255,255,0.04);">
+      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid var(--border);">
         <div style="font-size:22px; font-weight:800; color:var(--accent);">🎯 ${avgFocus}</div>
         <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Avg Focus</div>
       </div>
-      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid rgba(255,255,255,0.04);">
+      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid var(--border);">
         <div style="font-size:22px; font-weight:800; color:var(--green-400);">🚀 ${avgExec}</div>
         <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Avg Execution</div>
       </div>
@@ -4149,7 +4154,7 @@ function renderReviewV2() {
 
   if (hasReview) {
     const r = todayEntry.review;
-    html += `<div style="background:linear-gradient(135deg, rgba(83,74,183,0.15), var(--bg-secondary)); border-radius:14px; padding:16px; margin-bottom:16px; border:1px solid rgba(83,74,183,0.3);">
+    html += `<div style="background:linear-gradient(135deg, var(--purple-50), var(--bg-secondary)); border-radius:14px; padding:16px; margin-bottom:16px; border:1px solid var(--purple-100);">
       <div style="font-size:11px; font-weight:700; color:var(--accent); text-transform:uppercase; margin-bottom:8px;">Today's Review ✓</div>
       <div style="display:flex; gap:16px; font-size:13px; margin-bottom:10px;">
         <span>E: <strong>${r.energy}/5</strong></span>
@@ -4192,7 +4197,7 @@ function renderPlaybookV2() {
   if (!v2) return;
 
   const typeLabels = { 'outreach-plan': 'Outreach', 'ops': 'Operations', 'positioning': 'Positioning', 'playbook': 'Playbook', 'reference': 'Reference' };
-  const typeColors = { 'outreach-plan': '#FBBF24', 'ops': '#534AB7', 'positioning': '#34D399', 'playbook': '#60A5FA', 'reference': '#A78BFA' };
+  const typeColors = { 'outreach-plan': '#EF9F27', 'ops': '#534AB7', 'positioning': '#1D9E75', 'playbook': '#378ADD', 'reference': '#AFA9EC' };
 
   const sorted = [...resources].sort((a, b) => {
     if (a.pinned && !b.pinned) return -1;
@@ -4207,11 +4212,11 @@ function renderPlaybookV2() {
     </div>
 
     <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:20px;">
-      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid rgba(255,255,255,0.04);">
+      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid var(--border);">
         <div style="font-size:22px; font-weight:800; color:var(--accent);">${resources.length}</div>
         <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Total</div>
       </div>
-      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid rgba(255,255,255,0.04);">
+      <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid var(--border);">
         <div style="font-size:22px; font-weight:800; color:var(--amber-400);">${resources.filter(r => r.pinned).length}</div>
         <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Pinned</div>
       </div>
@@ -4238,8 +4243,8 @@ function renderPlaybookV2() {
           </div>
           <div id="resContent-${r.id}" class="resource-content" style="font-size:12px; color:var(--text-dim); line-height:1.5; max-height:0; overflow:hidden; transition:max-height 0.3s;">${esc(r.content || '')}</div>
           <div id="resActions-${r.id}" style="display:none; gap:8px; margin-top:8px; justify-content:flex-end;">
-            <button style="background:rgba(248,113,113,0.15); color:var(--red-400); border:none; border-radius:6px; padding:6px 12px; font-size:11px; cursor:pointer;" onclick="event.stopPropagation();deleteResource('${r.id}')">Delete</button>
-            <button style="background:rgba(83,74,183,0.15); color:var(--accent); border:none; border-radius:6px; padding:6px 12px; font-size:11px; cursor:pointer;" onclick="event.stopPropagation();editResource('${r.id}')">Edit</button>
+            <button style="background:var(--red-50); color:var(--red-800); border:none; border-radius:6px; padding:6px 12px; font-size:11px; cursor:pointer;" onclick="event.stopPropagation();deleteResource('${r.id}')">Delete</button>
+            <button style="background:var(--purple-50); color:var(--purple-800); border:none; border-radius:6px; padding:6px 12px; font-size:11px; cursor:pointer;" onclick="event.stopPropagation();editResource('${r.id}')">Edit</button>
           </div>
         </div>
       </div>`;
