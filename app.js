@@ -1244,19 +1244,19 @@ async function syncFromSupabase() {
 
     // V2: Sync new tables
     const v2Tables = [
-      { table: 'prospects', arr: 'prospects', toLocal: rowToProspect },
-      { table: 'pilots', arr: 'pilots', toLocal: rowToPilot },
-      { table: 'insights', arr: 'insights', toLocal: rowToInsight },
-      { table: 'decisions', arr: 'decisions', toLocal: rowToDecision },
-      { table: 'delegations', arr: 'delegations', toLocal: rowToDelegation },
-      { table: 'recurring_tasks', arr: 'recurringTasks', toLocal: rowToRecurring }
+      { table: 'prospects', get: () => prospects, set: v => prospects = v, toLocal: rowToProspect },
+      { table: 'pilots', get: () => pilots, set: v => pilots = v, toLocal: rowToPilot },
+      { table: 'insights', get: () => insights, set: v => insights = v, toLocal: rowToInsight },
+      { table: 'decisions', get: () => decisions, set: v => decisions = v, toLocal: rowToDecision },
+      { table: 'delegations', get: () => delegations, set: v => delegations = v, toLocal: rowToDelegation },
+      { table: 'recurring_tasks', get: () => recurringTasks, set: v => recurringTasks = v, toLocal: rowToRecurring }
     ];
-    for (const { table, arr, toLocal } of v2Tables) {
+    for (const { table, get, set, toLocal } of v2Tables) {
       try {
         const { data, error } = await sb.from(table).select('*').eq('user_id', currentUser.id);
         if (!error && data) {
           const localMap = {};
-          window[arr].forEach(item => { localMap[item.id] = item; });
+          get().forEach(item => { localMap[item.id] = item; });
           const merged = [];
           data.forEach(r => {
             const remote = toLocal(r);
@@ -1269,7 +1269,7 @@ async function syncFromSupabase() {
             }
           });
           Object.values(localMap).forEach(item => merged.push(item));
-          window[arr] = merged;
+          set(merged);
         }
       } catch (e) { console.log(`Sync ${table} error:`, e); }
     }
@@ -1999,14 +1999,12 @@ function renderHabits() {
     const streakColor = streakVal > 0 ? 'var(--green)' : 'var(--text-dim)';
     
     html += `
-    <div class="task-row v2-task-card ${t.done ? 'done' : ''}" onclick="openTaskDetail('${t.id}')">
-      <div class="checkbox-wrapper" onclick="event.stopPropagation(); toggleTask('${t.id}')">
-        <div class="checkbox ${t.done ? 'checked' : ''}"></div>
-      </div>
+    <div class="v2-task-row ${t.done ? 'done' : ''}" data-id="${t.id}" onclick="openTaskDetail('${t.id}')">
+      <div class="v2-task-check ${t.done ? 'checked' : ''}" onclick="event.stopPropagation(); toggleTask('${t.id}')"></div>
       <div class="v2-task-content" style="flex: 1;">
         <div class="v2-task-text" style="margin-bottom: 2px;">${esc(t.text)}</div>
         <div class="v2-task-meta" style="margin-top: 4px;">
-          <span style="color:${streakColor};font-size:12px;font-weight:600;display:flex;align-items:center;gap:4px;">
+          <span style="color:${streakColor};font-size:12px;font-weight:500;display:flex;align-items:center;gap:4px;">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
             </svg> ${streakVal}d
@@ -2139,11 +2137,9 @@ function renderThisWeek() {
     const renderGoal = (key, text, isDone) => {
       if (!text) return '';
       return `
-        <div style="display:flex; align-items:flex-start; margin-top:8px; gap:8px;">
-          <div class="checkbox-wrapper" onclick="toggleOkrValue('${key}')" style="margin-top:2px;">
-            <div class="checkbox ${isDone ? 'checked' : ''}"></div>
-          </div>
-          <div style="${isDone ? 'text-decoration:line-through;color:var(--text-dim)' : 'color:var(--text);font-weight:500;font-size:14px;'}">
+        <div style="display:flex; align-items:flex-start; margin-top:8px; gap:12px; cursor:pointer;" onclick="toggleOkrValue('${key}')">
+          <div class="v2-task-check ${isDone ? 'checked' : ''}"></div>
+          <div style="${isDone ? 'text-decoration:line-through;color:var(--text-dim)' : 'color:var(--text);font-weight:500;font-size:14px;'} margin-top:4px;">
             ${esc(text)}
           </div>
         </div>
@@ -2220,10 +2216,8 @@ function renderThisWeek() {
       const priorityBadge = `<div class="badge ${badgeClass}">${badgeText}</div>`;
 
       html += `
-      <div class="task-row v2-task-card ${t.done ? 'done' : ''}" onclick="openTaskDetail('${t.id}')">
-        <div class="checkbox-wrapper" onclick="event.stopPropagation(); toggleTask('${t.id}')">
-          <div class="checkbox ${t.done ? 'checked' : ''}"></div>
-        </div>
+      <div class="v2-task-row ${t.done ? 'done' : ''}" data-id="${t.id}" onclick="openTaskDetail('${t.id}')">
+        <div class="v2-task-check ${t.done ? 'checked' : ''}" onclick="event.stopPropagation(); toggleTask('${t.id}')"></div>
         <div class="v2-task-content" style="flex: 1;">
           <div class="v2-task-text" style="margin-bottom: 2px;">${esc(t.text)}</div>
           <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
@@ -2459,14 +2453,14 @@ function renderRecurring() {
       const nextDateLabel = rt.frequency === 'event-based' ? 'Trigger manually' : (rt.nextRunDate ? `Next: ${new Date(rt.nextRunDate).toLocaleDateString()}` : 'Not scheduled');
       
       html += `
-      <div class="task-row v2-task-card" onclick="openAddRecurringModal('${rt.id}')">
-        <div class="checkbox-wrapper" onclick="toggleRecurringActive(event, '${rt.id}')">
-          <div style="width:12px; height:12px; border-radius:50%; background:${activeColor};"></div>
+      <div class="v2-task-row" data-id="${rt.id}" onclick="openAddRecurringModal('${rt.id}')">
+        <div class="v2-task-check" style="border-color:${activeColor};" onclick="toggleRecurringActive(event, '${rt.id}')">
+          <div style="width:12px; height:12px; border-radius:50%; background:${activeColor}; opacity:${rt.active?1:0.3}; margin:auto;"></div>
         </div>
         <div class="v2-task-content" style="flex:1;">
           <div class="v2-task-text" style="color: ${rt.active ? 'var(--text)' : 'var(--text-dim)'};">${esc(rt.title)}</div>
           <div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
-            <div class="badge" style="background:var(--teal-transparent); color:var(--teal-400); font-weight:600; font-size:10px;">
+            <div class="badge" style="background:var(--teal-transparent); color:var(--teal-400); font-weight:500; font-size:10px;">
               ${rt.frequency.toUpperCase()}
             </div>
             <div style="font-size:11px; color:var(--text-dim);">
@@ -2475,7 +2469,7 @@ function renderRecurring() {
           </div>
         </div>
         ${rt.frequency === 'event-based' ? `
-        <button onclick="forceTriggerRecurring(event, '${rt.id}')" style="background:var(--bg-layer-2); border:none; color:var(--text); padding:6px 10px; border-radius:4px; font-size:11px; cursor:pointer;">
+        <button onclick="forceTriggerRecurring(event, '${rt.id}')" style="background:var(--bg-layer-2); border:none; color:var(--text); padding:6px 10px; border-radius:4px; font-size:11px; cursor:pointer; flex-shrink: 0;">
           Trigger Now
         </button>` : ''}
       </div>`;
@@ -2714,11 +2708,11 @@ function renderPipeline(filter = 'all') {
           const nameInitials = p.name ? p.name.split(' ').map(n=>n[0]).join('').slice(0,2) : '??';
           
           html += `
-            <div class="v2-card" style="padding:16px; margin-bottom:12px; display:flex; gap:16px; align-items:center;" onclick="openProspectDetail('${p.id}')">
+            <div class="v2-task-row" style="padding:16px; margin-bottom:12px; display:flex; gap:16px; align-items:center;" onclick="openProspectDetail('${p.id}')">
                 <div class="avatar-circle" style="width:40px; height:40px; flex-shrink:0; background:var(--bg-secondary); border:1px solid rgba(255,255,255,0.05);">${nameInitials}</div>
-                <div style="flex-grow:1;">
+                <div class="v2-task-content" style="flex-grow:1;">
                     <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                        <div style="font-weight:700; font-size:15px; color:var(--text);">${p.name}</div>
+                        <div class="v2-task-text" style="font-weight:700; font-size:15px; color:var(--text);">${p.name}</div>
                         <div style="width:8px; height:8px; border-radius:50%; background:${health}; box-shadow:0 0 8px ${health}44;"></div>
                     </div>
                     <div style="font-size:13px; color:var(--text-dim);">${p.title} · ${p.company}</div>
@@ -2763,7 +2757,7 @@ function renderPilots() {
           const daysSince = p.lastCheckinDate ? Math.floor((new Date() - new Date(p.lastCheckinDate))/(1000*60*60*24)) : '?';
           
           html += `
-            <div class="v2-card" style="padding:20px; margin-bottom:20px; border-top: 4px solid ${healthColor};">
+            <div class="v2-task-row" style="padding:20px; margin-bottom:20px; border-top: 4px solid ${healthColor}; display:block; cursor:default; transform:none;">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
                     <div>
                         <div style="font-size:18px; font-weight:800; color:var(--text);">${p.company}</div>
@@ -3157,8 +3151,8 @@ function renderReminders() {
     if (t.priority === 'medium') { badgeClass = 'pm'; badgeText = 'Medium'; }
     
     html += `
-    <div class="task-row v2-task-card" onclick="openTaskDetail('${t.id}')">
-      <div style="width:56px; font-weight:700; color:var(--teal-400); font-size:14px;">${t.reminderTime}</div>
+    <div class="v2-task-row" data-id="${t.id}" onclick="openTaskDetail('${t.id}')">
+      <div style="flex-shrink: 0; width: 56px; font-weight: 700; color: var(--teal-400); font-size: 14px; padding-top: 1px;">${t.reminderTime}</div>
       <div class="v2-task-content" style="flex:1;">
         <div class="v2-task-text">${esc(t.text)}</div>
         <div style="margin-top:4px;">
@@ -3233,15 +3227,13 @@ function renderDone() {
     html += sectionLabel('Recently Completed');
     doneTasks.forEach(t => {
       html += `
-      <div class="task-row v2-task-card done" onclick="openTaskDetail('${t.id}')">
-        <div class="checkbox-wrapper" onclick="event.stopPropagation(); toggleTask('${t.id}')">
-          <div class="checkbox checked"></div>
-        </div>
+      <div class="v2-task-row done" data-id="${t.id}" onclick="openTaskDetail('${t.id}')">
+        <div class="v2-task-check checked" onclick="event.stopPropagation(); toggleTask('${t.id}')"></div>
         <div class="v2-task-content" style="flex:1;">
           <div class="v2-task-text" style="text-decoration:line-through; color:var(--text-dim);">${esc(t.text)}</div>
           ${t.notes ? `<div style="font-size:12px; color:var(--text-dim); font-style:italic; margin-top:4px;">${esc(t.notes)}</div>` : ''}
         </div>
-        <div style="font-size:11px; color:var(--text-dim); margin-left:8px;">${formatTimeAgo(t.completedAt)}</div>
+        <div style="font-size:11px; color:var(--text-dim); margin-left:8px; flex-shrink: 0;">${formatTimeAgo(t.completedAt)}</div>
       </div>`;
     });
   }
@@ -3444,14 +3436,22 @@ function updateProgress() {
   const total = tasks.filter(t => !t.daily || t.cat === 'today').length;
   const done = tasks.filter(t => t.done).length;
   const pct = total > 0 ? Math.round(done / total * 100) : 0;
-  document.getElementById('progressFill').style.width = pct + '%';
-  document.getElementById('progressText').textContent = done + ' of ' + total + ' done';
-  document.getElementById('progressPct').textContent = pct + '%';
+  
+  const progFill = document.getElementById('progressFill');
+  if (progFill) progFill.style.width = pct + '%';
+  
+  const progText = document.getElementById('progressText');
+  if (progText) progText.textContent = done + ' of ' + total + ' done';
+  
+  const progPct = document.getElementById('progressPct');
+  if (progPct) progPct.textContent = pct + '%';
 
   const todayTasks = tasks.filter(t => t.cat === 'today' || t.cat === 'daily-habits');
   const todayDone = todayTasks.filter(t => t.done).length;
   const score = todayTasks.length > 0 ? Math.round(todayDone / todayTasks.length * 10) : 0;
-  document.getElementById('scoreNum').textContent = score;
+  
+  const scoreNumEl = document.getElementById('scoreNum');
+  if (scoreNumEl) scoreNumEl.textContent = score;
 }
 
 // ===================== HISTORY TAB =====================
@@ -3947,15 +3947,17 @@ function renderDecisionsV2() {
       const date = new Date(d.date + 'T12:00:00');
       const dateStr = date.toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' });
       const color = domainColors[d.domain] || '#534AB7';
-      html += `<div style="background:var(--bg-secondary); border-radius:12px; padding:16px; margin-bottom:10px; border-left:3px solid ${color}; border:1px solid rgba(255,255,255,0.04);">
-        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
-          <div style="font-size:15px; font-weight:700; line-height:1.4; flex:1;">${esc(d.decision)}</div>
-          <span style="font-size:10px; padding:3px 8px; border-radius:999px; background:${color}22; color:${color}; white-space:nowrap; margin-left:8px;">${d.domain || 'ops'}</span>
-        </div>
-        ${d.reason ? `<div style="font-size:12px; color:var(--text-dim); margin-bottom:6px; line-height:1.5;"><strong>Why:</strong> ${esc(d.reason)}</div>` : ''}
-        <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-muted);">
-          <span>${dateStr}</span>
-          <span>by ${esc(d.decidedBy || 'Ladson')}</span>
+      html += `<div class="v2-task-row" style="border-left:3px solid ${color}; border:1px solid rgba(255,255,255,0.04);">
+        <div class="v2-task-content" style="flex:1;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
+            <div class="v2-task-text" style="font-size:15px; font-weight:700; line-height:1.4; flex:1;">${esc(d.decision)}</div>
+            <span style="font-size:10px; padding:3px 8px; border-radius:999px; background:${color}22; color:${color}; white-space:nowrap; margin-left:8px;">${d.domain || 'ops'}</span>
+          </div>
+          ${d.reason ? `<div style="font-size:12px; color:var(--text-dim); margin-bottom:6px; line-height:1.5;"><strong>Why:</strong> ${esc(d.reason)}</div>` : ''}
+          <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-muted);">
+            <span>${dateStr}</span>
+            <span>by ${esc(d.decidedBy || 'Ladson')}</span>
+          </div>
         </div>
       </div>`;
     });
@@ -4045,9 +4047,11 @@ function renderDelegationV2() {
       const label = statusLabels[d.status] || d.status;
       const isOverdue = d.dueDate && new Date(d.dueDate) < new Date() && d.status !== 'done';
 
-      html += `<div style="background:var(--bg-secondary); border-radius:12px; padding:16px; margin-bottom:10px; border:1px solid rgba(255,255,255,0.04); ${isOverdue ? 'border-left:3px solid var(--red-400);' : ''}">
-        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
-          <div style="font-size:14px; font-weight:700; flex:1;">${esc(d.task)}</div>
+      html += `
+      <div class="v2-task-row" style="border:1px solid rgba(255,255,255,0.04); ${isOverdue ? 'border-left:3px solid var(--red-400);' : ''}">
+        <div class="v2-task-content" style="flex:1;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
+            <div class="v2-task-text" style="font-size:14px; font-weight:700; flex:1;">${esc(d.task)}</div>
           <span style="font-size:10px; padding:3px 8px; border-radius:999px; background:${color}22; color:${color}; white-space:nowrap; margin-left:8px; cursor:pointer;" onclick="cycleDelegationStatus('${d.id}')">${label}</span>
         </div>
         <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted);">
@@ -4167,12 +4171,14 @@ function renderReviewV2() {
       const d = new Date(entry.date + 'T12:00:00');
       const dayName = d.toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' });
       const r = entry.review;
-      html += `<div style="background:var(--bg-secondary); border-radius:12px; padding:14px; margin-bottom:8px; border:1px solid rgba(255,255,255,0.04);">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-          <span style="font-size:13px; font-weight:700;">${dayName}</span>
-          <span style="font-size:12px; color:var(--text-muted);">E:${r.energy} F:${r.focus} X:${r.exec}</span>
+      html += `<div class="v2-task-row" style="padding:14px; margin-bottom:8px;">
+        <div class="v2-task-content" style="flex:1;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span class="v2-task-text" style="font-size:13px; font-weight:700;">${dayName}</span>
+            <span style="font-size:12px; color:var(--text-muted); flex-shrink:0; margin-left:8px;">E:${r.energy} F:${r.focus} X:${r.exec}</span>
+          </div>
+          ${r.well ? `<div style="font-size:11px; color:var(--text-dim); line-height:1.4;">✓ ${esc(r.well)}</div>` : ''}
         </div>
-        ${r.well ? `<div style="font-size:11px; color:var(--text-dim); line-height:1.4;">✓ ${esc(r.well)}</div>` : ''}
       </div>`;
     });
   }
@@ -4221,18 +4227,20 @@ function renderPlaybookV2() {
     sorted.forEach(r => {
       const color = typeColors[r.type] || '#A78BFA';
       const label = typeLabels[r.type] || r.type;
-      html += `<div style="background:var(--bg-secondary); border-radius:12px; padding:16px; margin-bottom:10px; border:1px solid rgba(255,255,255,0.04); cursor:pointer;" onclick="toggleResourceExpand('${r.id}')">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-          <div style="display:flex; align-items:center; gap:8px;">
-            ${r.pinned ? '<span style="color:var(--amber-400);">★</span>' : ''}
-            <span style="font-size:14px; font-weight:700;">${esc(r.title)}</span>
+      html += `<div class="v2-task-row" style="padding:16px; margin-bottom:10px; cursor:pointer;" onclick="toggleResourceExpand('${r.id}')">
+        <div class="v2-task-content" style="flex:1;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              ${r.pinned ? '<span style="color:var(--amber-400); font-size:14px;">★</span>' : ''}
+              <span class="v2-task-text" style="font-size:14px; font-weight:700;">${esc(r.title)}</span>
+            </div>
+            <span style="font-size:10px; padding:3px 8px; border-radius:999px; background:${color}22; color:${color}; flex-shrink:0;">${label}</span>
           </div>
-          <span style="font-size:10px; padding:3px 8px; border-radius:999px; background:${color}22; color:${color};">${label}</span>
-        </div>
-        <div id="resContent-${r.id}" class="resource-content" style="font-size:12px; color:var(--text-dim); line-height:1.5; max-height:0; overflow:hidden; transition:max-height 0.3s;">${esc(r.content || '')}</div>
-        <div id="resActions-${r.id}" style="display:none; gap:8px; margin-top:8px; justify-content:flex-end;">
-          <button style="background:rgba(248,113,113,0.15); color:var(--red-400); border:none; border-radius:6px; padding:6px 12px; font-size:11px; cursor:pointer;" onclick="event.stopPropagation();deleteResource('${r.id}')">Delete</button>
-          <button style="background:rgba(83,74,183,0.15); color:var(--accent); border:none; border-radius:6px; padding:6px 12px; font-size:11px; cursor:pointer;" onclick="event.stopPropagation();editResource('${r.id}')">Edit</button>
+          <div id="resContent-${r.id}" class="resource-content" style="font-size:12px; color:var(--text-dim); line-height:1.5; max-height:0; overflow:hidden; transition:max-height 0.3s;">${esc(r.content || '')}</div>
+          <div id="resActions-${r.id}" style="display:none; gap:8px; margin-top:8px; justify-content:flex-end;">
+            <button style="background:rgba(248,113,113,0.15); color:var(--red-400); border:none; border-radius:6px; padding:6px 12px; font-size:11px; cursor:pointer;" onclick="event.stopPropagation();deleteResource('${r.id}')">Delete</button>
+            <button style="background:rgba(83,74,183,0.15); color:var(--accent); border:none; border-radius:6px; padding:6px 12px; font-size:11px; cursor:pointer;" onclick="event.stopPropagation();editResource('${r.id}')">Edit</button>
+          </div>
         </div>
       </div>`;
     });
