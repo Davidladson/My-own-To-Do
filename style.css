@@ -2337,3 +2337,31 @@
         transition: none !important;
       }
     }
+/* ===================== WEEKLY REVIEW MODAL ===================== */
+.wr-step label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+  margin-top: 12px;
+}
+.wr-step input[type="text"],
+.wr-step input[type="number"],
+.wr-step select,
+.wr-step textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  box-sizing: border-box;
+}
+.wr-step textarea {
+  min-height: 80px;
+  resize: vertical;
+  line-height: 1.5;
+}

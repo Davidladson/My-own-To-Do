@@ -32,16 +32,9 @@ let focusInterval = null;
 let timerSeconds = 0;
 
 // V2 in-memory state
-let prospects = [
-    { id: 'p1', name: 'John Doe', company: 'Acme Corp', title: 'CTO', status: 'contacted', lastContactDate: '2026-03-20', nextFollowupDate: '2026-03-24', linkedinUrl: 'https://linkedin.com', notes: 'Interested in pilot.' },
-    { id: 'p2', name: 'Jane Smith', company: 'Globex', title: 'VP Eng', status: 'discovery', lastContactDate: '2026-03-15', nextFollowupDate: '2026-03-21', linkedinUrl: 'https://linkedin.com', notes: 'Need to follow up on the demo.' }
-];
-let pilots = [
-    { id: 'pilot1', company: 'Acme Corp', contactName: 'John Doe', health: 'green', lastCheckinDate: '2026-03-18', onboardingStatus: 'In Progress (3/7)', onboardingItems: ['Payment', 'Kickoff', 'Slack'], updatedAt: new Date().toISOString() }
-];
-let insights = [
-    { id: 'i1', quote: 'We keep losing context between Jira and Slack.', contactName: 'Jane Smith', company: 'Globex', theme: 'context-loss', source: 'discovery-call', date: '2026-03-22', updatedAt: new Date().toISOString() }
-];
+let prospects = [];
+let pilots = [];
+let insights = [];
 let decisions = [];
 let delegations = [];
 let recurringTasks = [];
@@ -65,38 +58,61 @@ function uuidv4() {
 }
 
 const defaultTasks = [
-  { id: uid(), text: "Morning deep work block (DW1) completed", cat: "today", priority: "high", done: false, notes: "", daily: true },
-  { id: uid(), text: "5 new outreach messages sent", cat: "today", priority: "high", done: false, notes: "", daily: true },
-  { id: uid(), text: "Follow up on all pending replies", cat: "today", priority: "high", done: false, notes: "", daily: true },
-  { id: uid(), text: "Update Outreach Tracker with today's activity", cat: "today", priority: "medium", done: false, notes: "", daily: true },
-  { id: uid(), text: "30 min physical exercise", cat: "today", priority: "medium", done: false, notes: "", daily: true },
-  { id: uid(), text: "3L water intake", cat: "today", priority: "medium", done: false, notes: "", daily: true },
-  { id: uid(), text: "Night review: 3 bullets + score /10", cat: "today", priority: "high", done: false, notes: "", daily: true },
+  // Today — non-daily (specific tasks for the current work cycle)
+  { id: uid(), text: "DW1 - Demo script first draft (06:40-07:30)", cat: "today", priority: "high", done: false, daily: false, reminderTime: "06:40", notes: "Open a doc. Write the 3 screens (~500 words). Do not stop to edit. Ugly draft is the goal. This is the ONE THING this week." },
+  { id: uid(), text: "English practice - walk to college (60-sec pitch)", cat: "today", priority: "high", done: false, daily: false, reminderTime: "08:25", notes: "Monday: Speak the Malveon pitch out loud, continuously, the entire walk. No notes." },
+  { id: uid(), text: "Cyber lab - approve outreach drafts (13:10-13:25)", cat: "today", priority: "high", done: false, daily: false, reminderTime: "13:10", notes: "15 min only. Open LinkedIn. Review the 5 messages drafted by morning task. Approve, tweak names/companies, hit send. Update tracker. Done." },
+  { id: uid(), text: "Cyber lab - demo script (13:25-15:50)", cat: "today", priority: "high", done: false, daily: false, reminderTime: "13:25", notes: "~2 hours. Continue from DW1 draft. 3 screens: (1) Incident view - all context in one place, (2) Decision trail - what was decided and why, (3) Team pulse - who owns what. ~500 words total. Do not design. Just write what each screen shows and why it matters to an EM." },
+  { id: uid(), text: "Follow up all warm leads", cat: "today", priority: "high", done: false, daily: true, reminderTime: "13:15", notes: "Check Outreach Tracker for Status = Warm. If 24+ hours without reply, send follow-up." },
+  { id: uid(), text: "Reply to 3 X posts", cat: "today", priority: "medium", done: false, daily: true, reminderTime: "18:00", notes: "Search: \"Jira doesn't reflect reality\" OR \"engineering tool fatigue\". Reply to 3 posts with 5+ likes." },
+  { id: uid(), text: "Flex Work - Kavin sync + outreach follow-ups (19:00-20:00)", cat: "today", priority: "high", done: false, daily: false, reminderTime: "19:00", notes: "Sync with Kavin: demo script status, build date. Review any LinkedIn replies. Log outreach tracker." },
+  { id: uid(), text: "Night review - 3 bullets + score /10", cat: "today", priority: "high", done: false, daily: true, reminderTime: "21:30", notes: "WIN, LEARNING, TOMORROW. Send Kavin accountability ping." },
 
-  { id: uid(), text: "Set up Calendly with 3 available slots", cat: "this-week", priority: "high", done: false, notes: "" },
-  { id: uid(), text: "Find 10 LinkedIn prospects matching ICP", cat: "this-week", priority: "high", done: false, notes: "" },
-  { id: uid(), text: "Send first batch of personalized DMs", cat: "this-week", priority: "high", done: false, notes: "" },
-  { id: uid(), text: "Draft Malveon one-liner and test with 3 people", cat: "this-week", priority: "medium", done: false, notes: "" },
-  { id: uid(), text: "Practice mock discovery call with Kavin", cat: "this-week", priority: "medium", done: false, notes: "" },
-  { id: uid(), text: "Read 2 competitor product pages and note features", cat: "this-week", priority: "low", done: false, notes: "" },
-  { id: uid(), text: "Weekly review and self-feedback", cat: "this-week", priority: "high", done: false, notes: "1. Wins (what shipped)\n2. Failures (what missed, why)\n3. Outreach numbers\n4. Health check\n5. Top 3 next week\n6. Stop doing one thing\n7. Start doing one thing\n8. Rate week /10 + write 1 paragraph self-feedback" },
-  { id: uid(), text: "Review outreach tracker and update pipeline", cat: "this-week", priority: "medium", done: false, notes: "" },
+  // Daily Habits
+  { id: uid(), text: "Wake ritual - no phone first 15 min", cat: "daily-habits", priority: "high", done: false, daily: true, reminderTime: "06:30", notes: "Sit up immediately. Phone stays face down. Say one sentence: \"Today I will [intention word].\"" },
+  { id: uid(), text: "5 min morning stretch", cat: "daily-habits", priority: "medium", done: false, daily: true, reminderTime: "06:32", notes: "Neck rolls, shoulder rolls, spinal twist, quad stretch, wrist circles. No mat needed." },
+  { id: uid(), text: "Write 3 gratitude lines", cat: "daily-habits", priority: "medium", done: false, daily: true, reminderTime: "06:38", notes: "3 SPECIFIC things. Not \"family.\" Something like: \"Kavin built the auth module without being asked.\"" },
+  { id: uid(), text: "Morning intention - write ONE word", cat: "daily-habits", priority: "medium", done: false, daily: true, reminderTime: "06:40", notes: "Examples: \"sharp\", \"bold\", \"steady\", \"fast\", \"calm\". Keep visible during morning work." },
+  { id: uid(), text: "Eat protein breakfast", cat: "daily-habits", priority: "high", done: false, daily: true, reminderTime: "07:30", notes: "2+ eggs or protein option from mess. Eat in under 10 min. 1 glass water." },
+  { id: uid(), text: "English practice - college walk (10 min)", cat: "daily-habits", priority: "high", done: false, daily: true, reminderTime: "08:25", notes: "Speak OUT LOUD continuously during walk. Mon: 60-sec pitch. Tue: Explain yesterday. Wed: Describe Malveon. Thu: Customer pain. Fri: Week summary." },
+  { id: uid(), text: "Eat lunch at college mess", cat: "daily-habits", priority: "high", done: false, daily: true, reminderTime: "12:30", notes: "Do not skip because you are in flow. Back at cyber lab by 13:10." },
+  { id: uid(), text: "Drink water - 8 glasses across the day", cat: "daily-habits", priority: "medium", done: false, daily: true, reminderTime: "06:00", notes: "Set 8 alarms: 06:00, 08:00, 10:30, 12:30, 15:00, 17:00, 19:30, 22:00." },
+  { id: uid(), text: "30 min exercise", cat: "daily-habits", priority: "high", done: false, daily: true, reminderTime: "17:15", notes: "HIGH: 30 min run. MEDIUM: Push-ups, squats, plank, jumping jacks. LOW: 30 min walk." },
+  { id: uid(), text: "English practice - evening (30 min)", cat: "daily-habits", priority: "high", done: false, daily: true, reminderTime: "20:15", notes: "Mon/Wed: Record pitching 5 min, play back. Tue/Thu: Explain a technical decision. Fri: 3-min week update." },
+  { id: uid(), text: "Dinner before 20:15", cat: "daily-habits", priority: "high", done: false, daily: true, reminderTime: "19:35", notes: "Stop work at 19:30. Full meal." },
+  { id: uid(), text: "Read 10 pages", cat: "daily-habits", priority: "medium", done: false, daily: true, reminderTime: "22:00", notes: "Book on desk, not phone. Current: The Mom Test." },
+  { id: uid(), text: "Sleep by 23:00", cat: "daily-habits", priority: "high", done: false, daily: true, reminderTime: "22:30", notes: "22:30 stop screens. Phone across room. Lights off 23:00." },
 
-  { id: uid(), text: "Create Malveon demo walkthrough", cat: "before-pilot", priority: "high", done: false, notes: "" },
-  { id: uid(), text: "Pilot agreement template", cat: "before-pilot", priority: "high", done: false, notes: "$99/mo, 30-day, cancellation terms (simple 1-page)" },
-  { id: uid(), text: "Set up payment method (Stripe or Razorpay)", cat: "before-pilot", priority: "medium", done: false, notes: "" },
-  { id: uid(), text: "Define pilot success metrics", cat: "before-pilot", priority: "medium", done: false, notes: "" },
-  { id: uid(), text: "Founders Agreement with Kavin", cat: "before-pilot", priority: "high", done: false, notes: "" },
-  { id: uid(), text: "Incorporate Malveon", cat: "before-pilot", priority: "high", done: false, notes: "Talk to a CA. Covers entity registration." },
-  { id: uid(), text: "IP Assignment Agreement", cat: "before-pilot", priority: "medium", done: false, notes: "" },
-  { id: uid(), text: "Basic Terms of Service", cat: "before-pilot", priority: "medium", done: false, notes: "" },
-  { id: uid(), text: "Basic Privacy Policy", cat: "before-pilot", priority: "medium", done: false, notes: "" },
+  // This Week (Mar 23 - Mar 29)
+  { id: uid(), text: "Write Malveon demo script", cat: "this-week", priority: "high", done: false, daily: false, notes: "3 screens, ~500 words, 5-min demo. Share with Kavin by Tuesday 8pm. This is the ONE THING for the week." },
+  { id: uid(), text: "Send demo script to Kavin", cat: "this-week", priority: "high", done: false, daily: false, reminderTime: "20:00", notes: "Share Google Doc with Kavin after completing demo script. Get his feedback by Thursday." },
+  { id: uid(), text: "Discovery call prep (Wednesday Power Block)", cat: "this-week", priority: "high", done: false, daily: false, reminderTime: "18:00", notes: "Practice all 5 discovery questions from memory. Record yourself. Questions: team size + structure, incident walkthrough, Jira vs reality, context after senior engineer leaves, biggest frustration." },
+  { id: uid(), text: "Mock discovery call with Kavin (Thursday)", cat: "this-week", priority: "high", done: false, daily: false, reminderTime: "18:00", notes: "30 min mock call. Kavin plays engineering lead. Ask 5 questions. Do not pitch. Ladson listens." },
+  { id: uid(), text: "Pitch practice in English (Thursday morning)", cat: "this-week", priority: "medium", done: false, daily: false, reminderTime: "06:40", notes: "Record 30-second pitch 3 times without notes." },
+  { id: uid(), text: "Send 5 LinkedIn outreach messages (Mon + Wed)", cat: "this-week", priority: "high", done: false, daily: false, notes: "Use morning-prep task drafts. Review, approve, send. Update Outreach Tracker after each send." },
+  { id: uid(), text: "Update outreach tracker fully (Friday)", cat: "this-week", priority: "high", done: false, daily: false, reminderTime: "07:15", notes: "Verify all rows. Calculate weekly numbers: sent, replies, calls booked, reply rate %." },
 
-  { id: uid(), text: "Kavin: demo build timeline confirmation", cat: "waiting", priority: "high", done: false, notes: "" },
+  // Before First Pilot
+  { id: uid(), text: "Draft founders agreement with Kavin", cat: "before-pilot", priority: "high", done: false, daily: false, notes: "Equity split (60/40), roles, 4-year vesting with 1-year cliff, IP ownership, decision authority, exit clause. Do this before incorporation. Cost: Rs. 5,000-10,000 for a lawyer." },
+  { id: uid(), text: "Talk to CA about Pvt Ltd incorporation", cat: "before-pilot", priority: "high", done: false, daily: false, notes: "Structure confirmed: Private Limited Company. Ask CA about: DSC, DIN, SPICe+ filing, registered office address. Get timeline and cost estimate." },
+  { id: uid(), text: "Create pilot agreement template", cat: "before-pilot", priority: "high", done: false, daily: false, notes: "$99/month, 30-day termination notice, data handling clause, liability cap (3 months fees). Save to malveon/admin/." },
+  { id: uid(), text: "Set up Razorpay + Stripe", cat: "before-pilot", priority: "high", done: false, daily: false, notes: "Razorpay for Indian customers. Stripe India for international. Both need company PAN + GSTIN (post-incorporation)." },
+  { id: uid(), text: "Define pilot success metrics", cat: "before-pilot", priority: "medium", done: false, daily: false, notes: "3 specific metrics. Share with pilot customer before Day 1." },
+  { id: uid(), text: "Add ToS and Privacy Policy to website", cat: "before-pilot", priority: "medium", done: false, daily: false, notes: "Use termly.io. Host on GitHub Pages. Add links to Calendly and demo request form." },
+  { id: uid(), text: "File DPIIT Startup India registration", cat: "before-pilot", priority: "medium", done: false, daily: false, notes: "Apply at startupindia.gov.in after incorporation. Free. 3-year tax holiday + trademark fee rebate." },
 
-  { id: uid(), text: "Create NDA template for pilot customers", cat: "someday", priority: "low", done: false, notes: "" },
-  { id: uid(), text: "Record a 2-min Malveon demo video", cat: "someday", priority: "low", done: false, notes: "" },
-  { id: uid(), text: "Build warm intro list from existing network", cat: "someday", priority: "low", done: false, notes: "" },
+  // Waiting On
+  { id: uid(), text: "Kavin: demo build date", cat: "waiting", priority: "high", done: false, daily: false, reminderTime: "07:15", notes: "Waiting since Mar 6 (16 days). Ping today (Sunday). Need hard date to plan April demo target." },
+
+  // Someday
+  { id: uid(), text: "Record 2-min Malveon demo video", cat: "someday", priority: "medium", done: false, daily: false, notes: "" },
+  { id: uid(), text: "Build warm intro list from network", cat: "someday", priority: "medium", done: false, daily: false, notes: "" },
+  { id: uid(), text: "Update LinkedIn bio", cat: "someday", priority: "low", done: false, daily: false, notes: "" },
+  { id: uid(), text: "Pin tweet on X", cat: "someday", priority: "low", done: false, daily: false, notes: "" },
+  { id: uid(), text: "Read Never Split the Difference", cat: "someday", priority: "medium", done: false, daily: false, notes: "" },
+  { id: uid(), text: "Build consistent 30-min workout routine", cat: "someday", priority: "medium", done: false, daily: false, notes: "" },
+  { id: uid(), text: "Start a 3-sentence daily journal", cat: "someday", priority: "low", done: false, daily: false, notes: "" },
+  { id: uid(), text: "Apply for AWS Activate credits ($100K)", cat: "someday", priority: "medium", done: false, daily: false, notes: "Apply at aws.amazon.com/activate after incorporation. Covers hosting for pilot period." },
 ];
 
 const catLabels = {
@@ -3990,7 +4006,7 @@ function saveDecision() {
     date: todayStr(),
     decision: decision,
     reason: document.getElementById('decisionReasonInput').value.trim(),
-    decidedBy: 'Ladson',
+    decidedBy: document.getElementById('decisionDecidedByInput')?.value || 'Ladson',
     domain: document.getElementById('decisionDomainInput').value,
     updatedAt: new Date().toISOString()
   };
@@ -4170,7 +4186,7 @@ function renderReviewV2() {
   if (reviewedDays.length === 0) {
     html += `<div class="v2-empty"><div class="v2-empty-icon">📝</div><div class="v2-empty-text">No reviews yet. Complete 60% of your tasks to unlock today's review.</div></div>`;
   } else {
-    html += `<div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; margin-bottom:12px;">Past Reviews</div>`;
+    html += `<div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; margin-bottom:12px;">Past Daily Reviews</div>`;
     reviewedDays.forEach(entry => {
       if (entry.date === todayStr()) return; // Already shown above
       const d = new Date(entry.date + 'T12:00:00');
@@ -4187,6 +4203,44 @@ function renderReviewV2() {
       </div>`;
     });
   }
+
+  // Weekly Reviews section
+  const weeklyReviews = renderWeeklyReviews();
+  html += `<div style="margin-top:28px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">Weekly Reviews</div>
+      <button style="background:var(--accent); color:#fff; border:none; border-radius:8px; padding:7px 14px; font-size:12px; font-weight:700; cursor:pointer;" onclick="openWeeklyReviewModal()">+ This Week</button>
+    </div>`;
+
+  if (weeklyReviews.length === 0) {
+    html += `<div style="background:var(--bg-secondary); border-radius:12px; padding:20px; text-align:center; border:1px solid var(--border); color:var(--text-muted); font-size:13px;">No weekly reviews yet.<br><span style="font-size:12px;">Do one every Sunday — takes 10 min.</span></div>`;
+  } else {
+    weeklyReviews.forEach(wr => {
+      const weekStart = new Date(wr.weekStart + 'T12:00:00');
+      const weekEnd = new Date(weekStart); weekEnd.setDate(weekEnd.getDate() + 6);
+      const fmt = d => d.toLocaleDateString('en', { month: 'short', day: 'numeric' });
+      const scoreColor = wr.score >= 8 ? 'var(--green-400)' : wr.score >= 6 ? 'var(--amber-400)' : 'var(--red-400)';
+      const outreachLine = wr.outreachSent > 0 ? `${wr.outreachSent} sent · ${wr.outreachReplies} replies · ${wr.callsBooked} calls` : 'No outreach data';
+      html += `<div class="v2-task-row" style="padding:14px; margin-bottom:10px; cursor:pointer;" onclick="this.querySelector('.wr-expand').style.display = this.querySelector('.wr-expand').style.display === 'none' ? 'block' : 'none'">
+        <div class="v2-task-content" style="flex:1;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <span style="font-size:13px; font-weight:700;">${fmt(weekStart)} - ${fmt(weekEnd)}</span>
+            <span style="font-size:20px; font-weight:900; color:${scoreColor};">${wr.score}/10</span>
+          </div>
+          <div style="font-size:11px; color:var(--text-muted); margin-bottom:2px;">Outreach: ${outreachLine}</div>
+          ${wr.next1 ? `<div style="font-size:11px; color:var(--accent);">Next week: ${esc(wr.next1)}</div>` : ''}
+          <div class="wr-expand" style="display:none; margin-top:12px;">
+            ${wr.wins ? `<div style="font-size:12px; color:var(--text-dim); margin-bottom:6px;"><strong style="color:var(--green-400);">Wins:</strong> ${esc(wr.wins)}</div>` : ''}
+            ${wr.failures ? `<div style="font-size:12px; color:var(--text-dim); margin-bottom:6px;"><strong style="color:var(--red-400);">Missed:</strong> ${esc(wr.failures)}</div>` : ''}
+            ${wr.selfFeedback ? `<div style="font-size:12px; color:var(--text-dim); margin-bottom:6px;"><strong>Self:</strong> ${esc(wr.selfFeedback)}</div>` : ''}
+            ${wr.stop ? `<div style="font-size:12px; color:var(--amber-400);">Stop: ${esc(wr.stop)}</div>` : ''}
+          </div>
+        </div>
+      </div>`;
+    });
+  }
+  html += `</div>`;
+
   html += `</div>`;
   v2.innerHTML = html;
 }
@@ -4298,6 +4352,22 @@ function copyClaudeSnapshot() {
   let text = `MALVEON SNAPSHOT - ${new Date().toLocaleDateString()}\n\n`;
   text += generateTasksMd();
   navigator.clipboard.writeText(text).then(() => showSyncStatus('claudeSnapStatus'));
+}
+
+async function copyEveningCheckinApi() {
+  if (!sb || !currentUser) return;
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { showToast('Sign in first to get a session token.', 'error'); return; }
+  const token = session.access_token;
+  const uid = currentUser.id;
+  const base = SUPABASE_URL;
+  const key = SUPABASE_ANON_KEY;
+  const today = new Date().toISOString().split('T')[0];
+
+  // Upsert to daily_logs with empty fields for Claude to fill in
+  const cmd = `# Evening Check-in — paste into Claude session (${today})\n# Claude: fill in score, went_well, blocked, different, energy, focus, execution from Ladson's input\n\ncurl -s -X POST "${base}/rest/v1/daily_logs" \\\n  -H "apikey: ${key}" \\\n  -H "Authorization: Bearer ${token}" \\\n  -H "Content-Type: application/json" \\\n  -H "Prefer: return=representation,resolution=merge-duplicates" \\\n  -d '{"id":"${today}","user_id":"${uid}","date":"${today}","score":SCORE,"went_well":"WENT_WELL","blocked":"BLOCKED","different":"DIFFERENT","energy":ENERGY,"focus":FOCUS,"execution":EXECUTION}'`;
+
+  navigator.clipboard.writeText(cmd).then(() => showSyncStatus('eveningCheckinStatus'));
 }
 
 async function forceSyncNow() {
@@ -5080,40 +5150,46 @@ function addSubtask(taskId) {
 // ===================== PLAYBOOK / RESOURCES =====================
 const defaultResources = [
   {
-    title: 'Outreach Playbook',
-    type: 'outreach-plan',
-    pinned: true,
-    content: 'Key outreach strategy for Malveon:\n\n1. TARGET: Engineering Managers, VPs Engineering, CTOs at companies with 20-200 engineers\n2. CHANNELS: LinkedIn DMs (primary), cold email (secondary), warm intros (highest conversion)\n3. APPROACH: Lead with the pain point, not the product\n4. CADENCE: 5 new outreach messages per day minimum\n5. FOLLOW-UP: 3-day, 7-day, 14-day sequence\n\nPersonalization hooks:\n- Recent engineering blog posts\n- Open engineering roles (signal of growth)\n- Tech stack mentions\n- Conference talks or podcast appearances\n\nOpener template: "Hey [Name], saw [specific thing]. We are building Malveon to help engineering teams like yours [specific value]. Would love 15 min to show you."'
-  },
-  {
     title: 'Positioning Guide',
     type: 'positioning',
     pinned: true,
-    content: 'MALVEON POSITIONING\n\nOne-liner: "Malveon is the engineering team intelligence platform that turns scattered tool data into clear decisions."\n\nProblem: When engineering teams hit 20+ people, important context gets lost across Slack, Jira, GitHub, and 10+ tools. Decisions vanish in threads. Jira shows green but nothing ships. Incidents take 45+ min to triage.\n\nSolution: Malveon connects your engineering tools and surfaces the context that matters - so teams can make better decisions faster.\n\nKey differentiators:\n- Context layer (not just metrics)\n- Real-time intelligence (not dashboards)\n- Decision support (not surveillance)\n\nNOT: Developer productivity tool, time tracking, code review tool\nIS: Engineering team intelligence platform'
+    content: `MALVEON POSITIONING GUIDE\n\n=== THE ONE-SENTENCE PITCH (4 Versions - Pick Based on Their Pain) ===\n\nVersion 1 - Tool Chaos Pain:\n"Malveon connects your Slack, Jira, GitHub, and Datadog so you stop losing context across 15 different tools."\nUse when: "We have too many tools" or "Context switching is killing us"\n\nVersion 2 - Decision Loss Pain:\n"Malveon captures decisions from Slack threads before they disappear and surfaces them when developers need them in VS Code."\nUse when: "Decisions disappear" or "No one remembers what we decided"\n\nVersion 3 - Fake Health Dashboards Pain:\n"Malveon shows real project health by pulling signals from your actual tools - not what someone manually updated in Jira 3 days ago."\nUse when: "Jira doesn't reflect reality" or "Status reports are lies"\n\nVersion 4 - Incident Response Pain:\n"Malveon cuts incident triage from 30+ minutes to 5 minutes by auto-surfacing the PR, deploy, and conversation that caused the issue."\nUse when: "Incident response is chaos" or "We waste time during outages"\n\n=== TARGET CUSTOMER ===\n8-60 person engineering teams. Post-Series A startups, growing product teams, companies scaling fast. Too big for founder-mode chaos, too small for enterprise tools like ServiceNow.\n\n=== ELEVATOR PITCH (30 seconds) ===\n"You know how when eng teams hit 20+ people, they're using Slack, Jira, GitHub, Datadog, and 10 other tools? Decisions disappear in Slack threads, Jira says everything's green but nothing ships, and incidents take 45 minutes just to figure out what broke? That's what we fix. Malveon connects all those tools so you get one unified view - decisions surface when you need them, project health is based on real signals, and incident triage goes from 45 minutes to 5. We're in early access right now."\n\n=== CUSTOMER PAIN HIERARCHY ===\nTIER 1 - Lead with these: Incident triage takes 30-90 min | Decisions vanish in Slack | Jira health is fake\nTIER 2 - Use if Tier 1 doesn't land: Context switching kills flow | Manual status updates | Onboarding chaos\nTIER 3 - Don't lead with: Tool costs | Security/compliance\n\n=== HOW WE'RE DIFFERENT FROM JIRA/NOTION ===\nWe don't replace Jira or Linear. We pull data FROM them and add: decision memory, real health signals, deploy safety, context bridges. Think: connective tissue between your existing tools.\n\nPRICING (when asked): "We're in early access. Thinking $99-199/month for teams up to 30 people. For early customers who give us feedback, we're offering founder's pricing - significantly discounted and locked in forever."`
   },
   {
-    title: 'Copy-Paste DM Templates',
+    title: 'LinkedIn Templates',
     type: 'outreach-plan',
     pinned: true,
-    content: 'COLD DM TEMPLATES\n\nTemplate 1 - Pain-first:\n"Hey [Name], quick question - when your engineering team hits a production issue, how long does it take to figure out what changed and who knows the context? We are building something to cut that from 45+ min to under 5. Would love your take."\n\nTemplate 2 - Curiosity:\n"Hey [Name], noticed [company] is growing the engineering team. At 20+ engineers, we have seen teams lose track of decisions made in Slack threads. Building Malveon to fix that. Open to a quick chat?"\n\nTemplate 3 - Value offer:\n"Hey [Name], we are offering 5 engineering teams a free pilot of Malveon - connects your existing tools and shows you where context is getting lost. Interested in being one of them?"\n\nFOLLOW-UP (Day 3):\n"Hey [Name], just checking if you caught my last message. Happy to share a 2-min demo video instead if that is easier."'
+    content: `LINKEDIN OUTREACH TEMPLATES\nSend from: ladson@malveon.com\n\n=== CONNECTION REQUEST (300 char limit - NO PITCH) ===\nGoal: get them to accept. Do NOT mention what you're building.\n\nTemplate:\n"Hi [NAME], saw your post about [SPECIFIC THING THEY POSTED]. The problem you described with [SPECIFIC DETAIL] is something I think about a lot. Would love to connect."\n\nExample:\n"Hi Priya, saw your post about incident triage taking forever on Monday. The part about context scattered across tools hit me. Would love to connect."\n\nDO NOT USE: "Hi [NAME], building Malveon to solve context loss for eng teams." (tells them it's sales - 60% lower response rate)\n\n=== FOLLOW-UP MESSAGE (24 hrs after they accept - ONE question, no pitch) ===\n\nTemplate A (incident-focused):\n"Thanks for connecting, [NAME]. Quick question - when your eng team hits an incident, roughly how long does it take to connect the dots between the Slack alert, the GitHub PR, and whoever owns the service? Just curious how different teams handle this."\n\nTemplate B (decision-focused):\n"Thanks for connecting, [NAME]. Genuine question - at [COMPANY], how does your team currently handle decisions that get made in Slack threads? Like, 3 weeks later, how does a new engineer know why something was built a certain way?"\n\nWHY ONE QUESTION ONLY: They don't know you yet. If they answer, THEN you have permission to share more. Gets 3-4x higher reply rates than pitching on first follow-up.`
   },
   {
-    title: 'Discovery Call Script',
+    title: 'Follow-up Sequence (Day 4 / 9 / 14)',
+    type: 'outreach-plan',
+    pinned: true,
+    content: `FOLLOW-UP CADENCE\nD0: Send connection + note | D4: First follow-up | D9: Second follow-up | D14: Close-out\n\n=== DAY 4 - First follow-up (if no reply) ===\n"Hey [NAME], wanted to follow up on my earlier message. No worries if timing is off. If you ever want to talk about the context loss problem for engineering teams, I'd love to hear how you're handling it at [COMPANY]."\n\n=== DAY 9 - Second follow-up (short, direct) ===\n"Hey [NAME] - last note from me. Building Malveon to cut incident triage time for eng teams from 30+ min to under 5. If that's a pain you feel, happy to show you what we have. If not, no worries."\n\n=== DAY 14 - Close-out (gives them an easy out, sometimes triggers a reply) ===\n"Closing the loop on this one. If the context-loss-across-tools problem ever becomes urgent at [COMPANY], I'm at ladson@malveon.com. Good luck with everything you're building."\n\n=== RESPONSE ESCALATION LADDER ===\nLevel 1 - They like your reply: Do nothing. Wait.\nLevel 2 - They reply short ("Exactly!" or "So true"):\n"Glad this resonated. We're talking to eng leads dealing with this exact problem right now. Would love 15 minutes to hear how you're handling it - open to a quick call?"\nLevel 3 - They reply with a detailed answer: Move to DM immediately. Use DM template.\nLevel 4 - They DM you first: Reply within 1 hour. Propose a call with Calendly link. Do not make them wait.\n\n=== WEEKLY VOLUME TARGETS ===\nLinkedIn connection requests: 10/day\nLinkedIn follow-up messages: same day as acceptance\nX replies: 5/day\nDMs to warm leads: within 1 hour of reply\nNew prospects added: 10/day\nExpected result: 3-5 new conversations/week, 15-20/month`
+  },
+  {
+    title: 'X / Twitter Templates',
+    type: 'outreach-plan',
+    pinned: false,
+    content: `X / TWITTER OUTREACH TEMPLATES\n\n=== 5 REPLY TEMPLATES ===\n\n1. TOOL CHAOS (when someone complains about too many tools):\n"We heard this exact pain from eng leads last month. One team paying for Slack + Jira + Linear + GitHub + Datadog + PagerDuty was still pinging people manually for status.\n\nWhat's the breaking point for you - cost or context loss?"\n\n2. DECISION LOSS (when someone talks about decisions disappearing):\n"This is brutal. Talked to an eng lead recently who said 'we decided something in a Slack call, a developer asks me 2 weeks later, I can't find the notes anywhere.'\n\nDoes this happen more in product decisions or technical ones for you?"\n\n3. INCIDENT RESPONSE PAIN (when someone shares a downtime story):\n"30-90 minute triage is the killer. Heard from a team that spent 45 min just finding which PR caused the issue because context was split across Slack, Jira, GitHub, and Datadog.\n\nWhat takes longest in your incident triage - finding the cause or getting the right people?"\n\n4. TEAM SCALING PAIN (when someone talks about team growing quickly):\n"That 15 to 30 person jump is where everything breaks. What worked for 15 suddenly doesn't scale.\n\nFor you, was it communication chaos or process breakdown that hit first?"\n\n5. JIRA LIES (when someone says status reports are wrong):\n"'Jira says green but nothing ships' is every PM's nightmare.\n\nWhat finally forced the honest conversation - demo day, investor meeting, or a customer asking 'where is it?'"\n\n=== DM TEMPLATE (when they reply positively to your comment) ===\n"Hey [NAME], really appreciated what you said about [SPECIFIC THING].\n\nWe're building Malveon for exactly this - eng teams where context gets lost across Slack, Jira, and GitHub. Would love 15 minutes to hear more about your situation and show you what we have.\n\nOpen to a quick call this week? Here's my calendar: [CALENDLY LINK]\n\n- Ladson, co-founder Malveon"\n\n=== SEARCH TERMS FOR TARGETS ===\n"Jira doesn't reflect reality" | "engineering tool fatigue" | "incident triage chaos" | "slack decisions disappear"`
+  },
+  {
+    title: 'Email Templates (All 5)',
+    type: 'outreach-plan',
+    pinned: false,
+    content: `EMAIL TEMPLATES\nALWAYS send from: ladson@malveon.com (NEVER lads8572@gmail.com)\n\n=== TEMPLATE 1: Cold Outreach - India targets ===\nSubject: Quick question about eng team context loss\n\nHi [NAME],\n\nOne honest question: when your team hits an incident, how long does it take to connect the Slack alert, the relevant GitHub PR, and the Jira ticket? Most teams we talk to say 30-45 min.\n\nWe're building Malveon to bring that to under 5. Have a working prototype. Would love 20 min to show you and get your honest take.\n\nFree this week?\n\n- Ladson, Co-founder Malveon | ladson@malveon.com\n\n=== TEMPLATE 2: Cold Outreach - US/Europe targets ===\nSubject: [COMPANY] eng team - worth 15 mins?\n\nHi [NAME],\n\nBuilding Malveon - engineering team intelligence layer for teams with 20-60 people dealing with Slack + Jira + GitHub context loss.\n\nQuick question: at [COMPANY], how does your team currently know if a project is actually healthy vs what Jira says?\n\nIf that's a real problem for you, I'd love to show you what we have. 15 min max.\n\n- Ladson, Co-founder Malveon | ladson@malveon.com\n\n=== TEMPLATE 3: Warm Intro Follow-Up ===\nSubject: [INTRODUCER] suggested we connect\n\nHi [NAME],\n\n[INTRODUCER] thought we should talk. Building Malveon to solve context loss for engineering teams - Slack decisions that disappear, Jira that doesn't reflect reality, incidents that take 45 min to triage.\n\n[INTRODUCER] mentioned you lead engineering at [COMPANY]. Would love 20 minutes to hear how you're handling this and show you what we're building.\n\nFree this week or next?\n\n- Ladson, Co-founder Malveon | ladson@malveon.com\n\n=== TEMPLATE 4: Post-Call (They Said Yes) ===\nSubject: Next steps - Malveon early access\n\nHey [NAME], great talking. Based on what you shared:\n1. [SPECIFIC PAIN THEY MENTIONED]\n2. Early access timeline: [DATE]\n3. I'll send login details + a 5-min onboarding doc\n\nWill ping you on [SPECIFIC DATE] with the update.\nReach me anytime: ladson@malveon.com\n\n- Ladson\n\n=== TEMPLATE 5: Post-Call (They Said No) ===\nSubject: Thanks for being straight\n\nHey [NAME], really appreciate the honesty. Sounds like [THEIR REASON] is the blocker. Totally fair. If things change - or if you know someone leading engineering at a 20-60 person company - I'd love an intro.\n\n- Ladson | ladson@malveon.com`
+  },
+  {
+    title: 'Discovery Call + Objection Handling',
     type: 'playbook',
     pinned: false,
-    content: 'DISCOVERY CALL STRUCTURE (20 min)\n\n1. OPENER (2 min)\n- "Thanks for taking the time. I will keep this to 20 min."\n- "Before I show anything, I would love to understand your setup."\n\n2. QUALIFYING QUESTIONS (8 min)\n- How big is your engineering team?\n- What tools does your team use daily? (Slack, Jira, GitHub, etc.)\n- When there is a production issue, how do you figure out what changed?\n- How do engineering decisions get documented?\n- What is your biggest frustration with your current tooling?\n\n3. DEMO / VALUE PROP (5 min)\n- Map their pain to Malveon features\n- Show 1-2 specific scenarios from their answers\n\n4. NEXT STEPS (5 min)\n- "Would a 4-week pilot make sense?"\n- "We charge $99/month flat during pilot."\n- "What would success look like for you?"'
+    content: `DISCOVERY CALL SCRIPT\n\nOPENING:\n"Thanks for taking the time, [NAME]. Before I tell you what we're building, I'd love to hear about your setup first. Does that work?"\n\nQUESTION 1: Walk me through a typical week. What tools do you and your team touch most?\n\nQUESTION 2: When's the last time important context got lost - buried in a Slack thread, wrong Jira status, or just nobody knows why a decision was made?\n\nQUESTION 3: How do you currently know if a project is actually on track vs what the dashboard says?\n\nQUESTION 4: When an incident hits, what takes the longest - finding the cause or getting the right people?\n\nQUESTION 5: If you could fix one thing about how information flows in your team, what would it be?\n\nCLOSING:\n"Two questions: Would this actually solve the problem you described? And if we have early access ready in the next 3-4 weeks, would you be open to trying it?"\n\n=== OBJECTION HANDLING ===\n\n"We already use Jira/Linear":\n"Totally. Malveon doesn't replace Jira - it pulls data from Jira and adds what's missing: decision memory, real project health signals, and deploy context. Think of it as the layer that connects Jira + Slack + GitHub."\n\n"We're too early/small":\n"Understood. When do you think you'll hit the breaking point? Most teams say it happens around 15-20 engineers when async communication starts breaking."\n\n"No budget":\n"Makes sense. What are you currently spending on Slack + Jira + GitHub + Datadog combined? Our goal is to reduce your total tool spend, not add to it."\n\n"Don't have time to evaluate":\n"Fair. Would you be open to a 10-minute async Loom demo? You watch when convenient and tell me if it's worth exploring."\n\n"Can we try it first?":\n"Absolutely. We onboard you (15 min setup). You use it for 2-3 weeks. We check in every few days for feedback. At the end, you decide if it's worth paying for. Sound fair?"`
   },
   {
-    title: "This Week's Priorities",
-    type: 'reference',
-    pinned: true,
-    content: 'Update this every Monday with your top 5 priorities for the week.\n\n1. [Priority 1]\n2. [Priority 2]\n3. [Priority 3]\n4. [Priority 4]\n5. [Priority 5]\n\nKey metric to hit this week: ___\nBiggest risk this week: ___'
-  },
-  {
-    title: 'Pilot Agreement Template',
+    title: 'India-First Targeting Guide',
     type: 'reference',
     pinned: false,
-    content: 'MALVEON PILOT AGREEMENT\n\nDraft your 1-page pilot agreement here.\n\nInclude:\n- Duration: 4-8 weeks\n- Price: $99/month flat (pilot pricing)\n- What they get: Full Malveon access for their team\n- Success metrics: Agree upfront on what "working" means\n- Data: What data access is needed\n- Support: Direct Slack/email support from founders\n\nKeep it simple - no complex legal language at this stage.'
+    content: `INDIA-FIRST TARGET SEARCH\nDo India targets before US/Europe. Same timezone, no competition, easier calls, faster trust.\n\n=== BEST ICP IN INDIA RIGHT NOW ===\n- Series A/B SaaS companies (Bangalore, Hyderabad, Pune, Chennai)\n- 20-80 engineer teams using Slack + Jira + GitHub daily\n- Company types: fintech, edtech infra, B2B SaaS, dev tools\n\n=== LINKEDIN SEARCH STRINGS ===\n- "Head of Engineering" + India + 51-200 employees\n- "Engineering Manager" + Bangalore/Hyderabad + software\n- "VP Engineering" + India + Series A/B\n\nWHY INDIA FIRST: Same ICP pain, same timezone, WhatsApp follow-ups possible, easier to get a call, no US reps competing for their attention yet.\n\n=== X/TWITTER POST TEMPLATES ===\n\nPost Type 1 - Customer Pain (weekly):\n"Talked to an eng lead yesterday who said: 'We spent $80K last year on tools. Everyone's still asking where did we decide this? in Slack.' Tool sprawl isn't a tooling problem. It's a context problem. That's why we built Malveon."\n\nPost Type 2 - Building in Public (2-3x per week):\n"Day [X] building Malveon: Shipped: [FEATURE]. Learning: [INSIGHT]. Next: [PLAN]. Building for 20-60 person eng teams tired of tool chaos."\n\nPost Type 3 - Customer Insight (weekly):\n"'When did you realize you needed this?' Every eng lead we've talked to says: 'Between engineer 15 and 25, everything broke. What worked for 15 doesn't scale.' If you're in that range right now, reply and tell me what broke first."\n\n=== DAILY OUTREACH CHECKLIST ===\nMorning: Draft post + tweet saved | 3 new ICP prospects identified | 2 DMs sent\nMidday: 5 LinkedIn comments on ICP posts | 3 X replies | DMs to morning prospects\nEvening (manual): Review daily-staging.md | Approve posts | Update tracker`
   }
 ];
 
@@ -5461,6 +5537,8 @@ function renderSync() {
         <pre id="claudeApiSnippet" style="display:none;margin-top:10px;font-size:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px;white-space:pre-wrap;word-break:break-all;color:var(--text-dim);text-align:left"></pre>
         <button class="sync-btn secondary" style="margin-top:8px" onclick="copyClaudeSnapshot()">Copy Snapshot (offline)</button>
         <div class="sync-status" id="claudeSnapStatus">Snapshot copied!</div>
+        <button class="sync-btn secondary" style="margin-top:8px" onclick="copyEveningCheckinApi()">Copy Evening Check-in API</button>
+        <div class="sync-status" id="eveningCheckinStatus">Copied! Paste this into your evening scheduled task.</div>
         <p style="margin-top:8px;font-size:12px;color:var(--green)">Token tied to your session — refresh if Claude says 401.</p>
       ` : `<p style="color:var(--text-dim)">Sign in to enable Claude API sync.</p>`}
     </div>
@@ -6003,6 +6081,147 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').then(() => {
     console.log('Malveon Tasks SW registered');
   }).catch(err => console.log('SW registration failed:', err));
+}
+
+// ===================== ESCAPE KEY — CLOSE ANY OPEN MODAL =====================
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape') return;
+  const modalMap = [
+    { id: 'modal', fn: () => typeof closeModal === 'function' && closeModal() },
+    { id: 'reviewModal', fn: () => typeof closeReviewModal === 'function' && closeReviewModal() },
+    { id: 'decisionModal', fn: () => typeof closeDecisionModal === 'function' && closeDecisionModal() },
+    { id: 'delegationModal', fn: () => typeof closeDelegationModal === 'function' && closeDelegationModal() },
+    { id: 'okrModal', fn: () => typeof closeOkrModal === 'function' && closeOkrModal() },
+    { id: 'addRecurringModal', fn: () => typeof closeAddRecurringModal === 'function' && closeAddRecurringModal() },
+    { id: 'resourceModal', fn: () => typeof closeResourceModal === 'function' && closeResourceModal() },
+    { id: 'prospectModal', fn: () => typeof closeProspectModal === 'function' && closeProspectModal() },
+    { id: 'pilotModal', fn: () => typeof closePilotModal === 'function' && closePilotModal() },
+    { id: 'insightModal', fn: () => typeof closeInsightModal === 'function' && closeInsightModal() },
+    { id: 'notifModal', fn: () => typeof closeNotifModal === 'function' && closeNotifModal() },
+    { id: 'detailOverlay', fn: () => typeof closeTaskDetail === 'function' && closeTaskDetail() },
+    { id: 'prospectDetailOverlay', fn: () => typeof closeProspectDetail === 'function' && closeProspectDetail() },
+    { id: 'weeklyReviewModal', fn: () => typeof closeWeeklyReviewModal === 'function' && closeWeeklyReviewModal() },
+  ];
+  for (const m of modalMap) {
+    const el = document.getElementById(m.id);
+    if (el && (el.classList.contains('open') || el.style.display === 'flex')) {
+      m.fn();
+      break;
+    }
+  }
+});
+
+// ===================== WEEKLY REVIEW =====================
+const WEEKLY_REVIEWS_KEY = 'malveon_weekly_reviews';
+let weeklyReviewStep = 1;
+
+function getMondayStr(offset = 0) {
+  const d = new Date();
+  const day = d.getDay();
+  const diff = (day === 0 ? -6 : 1 - day) + offset * 7;
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().split('T')[0];
+}
+
+function openWeeklyReviewModal() {
+  weeklyReviewStep = 1;
+  // Show step 1, hide others
+  for (let i = 1; i <= 6; i++) {
+    const el = document.getElementById('wr-step-' + i);
+    if (el) el.style.display = i === 1 ? 'block' : 'none';
+  }
+  renderWeeklyReviewDots();
+  // Set date label
+  const monday = getMondayStr(0);
+  const sunday = getMondayStr(0);
+  const d = new Date(monday + 'T12:00:00');
+  const end = new Date(d);
+  end.setDate(end.getDate() + 6);
+  const fmt = (date) => date.toLocaleDateString('en', { month: 'short', day: 'numeric' });
+  const lbl = document.getElementById('weeklyReviewDateLabel');
+  if (lbl) lbl.textContent = `Week of ${fmt(d)} - ${fmt(end)}`;
+  // Update button
+  const btn = document.getElementById('weeklyReviewNextBtn');
+  if (btn) btn.textContent = 'Next';
+  document.getElementById('weeklyReviewModal').classList.add('open');
+}
+
+function closeWeeklyReviewModal() {
+  document.getElementById('weeklyReviewModal').classList.remove('open');
+}
+
+function renderWeeklyReviewDots() {
+  const container = document.getElementById('weeklyReviewStepDots');
+  if (!container) return;
+  container.innerHTML = Array.from({ length: 6 }, (_, i) => {
+    const step = i + 1;
+    const bg = step < weeklyReviewStep ? 'var(--green-400)' : step === weeklyReviewStep ? 'var(--accent)' : 'var(--border)';
+    return `<div style="width:${step === weeklyReviewStep ? '20px' : '8px'};height:8px;border-radius:4px;background:${bg};transition:all 0.2s;"></div>`;
+  }).join('');
+}
+
+function weeklyReviewNext() {
+  if (weeklyReviewStep < 6) {
+    const current = document.getElementById('wr-step-' + weeklyReviewStep);
+    const next = document.getElementById('wr-step-' + (weeklyReviewStep + 1));
+    if (current) current.style.display = 'none';
+    if (next) next.style.display = 'block';
+    weeklyReviewStep++;
+    renderWeeklyReviewDots();
+    const btn = document.getElementById('weeklyReviewNextBtn');
+    if (btn) btn.textContent = weeklyReviewStep === 6 ? 'Save Review' : 'Next';
+  } else {
+    saveWeeklyReview();
+  }
+}
+
+function saveWeeklyReview() {
+  const monday = getMondayStr(0);
+  const review = {
+    id: 'wr-' + monday,
+    weekStart: monday,
+    savedAt: new Date().toISOString(),
+    wins: document.getElementById('wr-wins')?.value.trim() || '',
+    failures: document.getElementById('wr-failures')?.value.trim() || '',
+    outreachSent: parseInt(document.getElementById('wr-outreach-sent')?.value) || 0,
+    outreachReplies: parseInt(document.getElementById('wr-outreach-replies')?.value) || 0,
+    callsBooked: parseInt(document.getElementById('wr-calls-booked')?.value) || 0,
+    pilots: parseInt(document.getElementById('wr-pilots')?.value) || 0,
+    energy: parseInt(document.getElementById('wr-energy')?.value) || 3,
+    focus: parseInt(document.getElementById('wr-focus')?.value) || 3,
+    exec: parseInt(document.getElementById('wr-exec')?.value) || 3,
+    health: document.getElementById('wr-health')?.value.trim() || '',
+    next1: document.getElementById('wr-next1')?.value.trim() || '',
+    next2: document.getElementById('wr-next2')?.value.trim() || '',
+    next3: document.getElementById('wr-next3')?.value.trim() || '',
+    stop: document.getElementById('wr-stop')?.value.trim() || '',
+    score: parseInt(document.getElementById('wr-score')?.value) || 7,
+    selfFeedback: document.getElementById('wr-self-feedback')?.value.trim() || '',
+  };
+
+  const all = JSON.parse(localStorage.getItem(WEEKLY_REVIEWS_KEY) || '[]');
+  const idx = all.findIndex(r => r.weekStart === monday);
+  if (idx >= 0) all[idx] = review; else all.push(review);
+  localStorage.setItem(WEEKLY_REVIEWS_KEY, JSON.stringify(all));
+
+  // Also set the OKR for next week from the top 3
+  if (review.next1) {
+    const nextMonday = getMondayStr(1);
+    const existing = JSON.parse(localStorage.getItem(OKR_KEY) || 'null');
+    if (!existing || existing.weekStart !== nextMonday) {
+      const nextOkr = { weekStart: nextMonday, one: review.next1, bonus1: review.next2, bonus2: review.next3 };
+      localStorage.setItem(OKR_KEY, JSON.stringify(nextOkr));
+    }
+  }
+
+  closeWeeklyReviewModal();
+  showToast('Weekly review saved!', 'success');
+  renderReviewV2();
+}
+
+function renderWeeklyReviews() {
+  const all = JSON.parse(localStorage.getItem(WEEKLY_REVIEWS_KEY) || '[]');
+  return all.sort((a, b) => b.weekStart.localeCompare(a.weekStart));
 }
 
 // ===================== START =====================

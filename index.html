@@ -115,7 +115,7 @@
     </nav>
 
     <!-- Add/Edit Modal -->
-    <div class="modal-overlay" id="modal">
+    <div class="modal-overlay" id="modal" onclick="if(event.target===this)closeModal()">
       <div class="modal" id="modalContent">
         <h2 id="modalTitle">Add Task</h2>
         <label>Task</label>
@@ -157,7 +157,7 @@
     </div>
 
     <!-- Review Modal -->
-    <div class="modal-overlay" id="reviewModal">
+    <div class="modal-overlay" id="reviewModal" onclick="if(event.target===this)closeReviewModal()">
       <div class="modal">
         <h2>Daily Self-Review</h2>
         <label>What went well today?</label>
@@ -203,7 +203,7 @@
     </div>
 
     <!-- Resource Add/Edit Modal -->
-    <div class="resource-modal-overlay" id="resourceModal">
+    <div class="resource-modal-overlay" id="resourceModal" onclick="if(event.target===this)closeResourceModal()">
       <div class="modal">
         <h2 id="resourceModalTitle">Add Resource</h2>
         <label>Title</label>
@@ -230,7 +230,7 @@
     </div>
 
     <!-- OKR Modal -->
-    <div class="modal-overlay" id="okrModal">
+    <div class="modal-overlay" id="okrModal" onclick="if(event.target===this)closeOkrModal()">
       <div class="modal">
         <h2>Set Weekly OKRs</h2>
         <label>ONE THING (Main Focus)</label>
@@ -250,7 +250,7 @@
     </div>
 
     <!-- Add Recurring Task Modal -->
-    <div class="modal-overlay" id="addRecurringModal">
+    <div class="modal-overlay" id="addRecurringModal" onclick="if(event.target===this)closeAddRecurringModal()">
       <div class="modal">
         <h2 id="recurringModalTitle">Add/Edit Recurring Task</h2>
         <input type="hidden" id="recurringIdInput">
@@ -310,7 +310,7 @@
 
   
   <!-- Decision Modal -->
-  <div class="modal-overlay" id="decisionModal">
+  <div class="modal-overlay" id="decisionModal" onclick="if(event.target===this)closeDecisionModal()">
     <div class="modal">
       <h2>Log Decision</h2>
       <label>Decision</label>
@@ -319,12 +319,24 @@
       <textarea id="decisionReasonInput" rows="3" placeholder="Why was this decided?"></textarea>
       <label>Domain</label>
       <select id="decisionDomainInput">
-        <option value="ops">Operations</option>
         <option value="product">Product</option>
         <option value="sales">Sales</option>
+        <option value="ops">Operations</option>
         <option value="engineering">Engineering</option>
-        <option value="hiring">Hiring</option>
+        <option value="legal">Legal</option>
         <option value="finance">Finance</option>
+        <option value="hr">HR / Hiring</option>
+        <option value="fundraising">Fundraising</option>
+        <option value="marketing">Brand / Marketing</option>
+        <option value="customer-success">Customer Success</option>
+        <option value="banking">Banking</option>
+        <option value="international">International</option>
+      </select>
+      <label>Decided By</label>
+      <select id="decisionDecidedByInput">
+        <option value="Ladson">Ladson</option>
+        <option value="Ladson + Kavin">Ladson + Kavin</option>
+        <option value="Kavin">Kavin</option>
       </select>
       <div class="modal-actions">
         <button class="btn-cancel" onclick="closeDecisionModal()">Cancel</button>
@@ -334,7 +346,7 @@
   </div>
 
   <!-- Delegation Modal -->
-  <div class="modal-overlay" id="delegationModal">
+  <div class="modal-overlay" id="delegationModal" onclick="if(event.target===this)closeDelegationModal()">
     <div class="modal">
       <h2>Delegate Task</h2>
       <label>Task</label>
@@ -352,7 +364,7 @@
     </div>
   </div>
     <!-- Notification Modal (Phase 22) -->
-  <div class="modal-overlay" id="notifModal">
+  <div class="modal-overlay" id="notifModal" onclick="if(event.target===this)closeNotifModal()">
     <div class="modal" style="max-height:80vh; overflow-y:auto;">
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <h2 style="margin:0;">Active Alerts</h2>
@@ -363,7 +375,7 @@
   </div>
 
   <!-- CRM Modals -->
-  <div class="modal-overlay" id="prospectModal">
+  <div class="modal-overlay" id="prospectModal" onclick="if(event.target===this)closeProspectModal()">
     <div class="modal">
       <h2 id="prospectModalTitle">Add Prospect</h2>
       <input type="hidden" id="prospectIdInput">
@@ -399,7 +411,7 @@
     <div class="detail-panel" id="prospectDetailPanel" style="padding:0;"></div>
   </div>
 
-  <div class="modal-overlay" id="pilotModal">
+  <div class="modal-overlay" id="pilotModal" onclick="if(event.target===this)closePilotModal()">
       <div class="modal">
         <h2>Add New Pilot</h2>
         <label>Company Name</label>
@@ -421,7 +433,7 @@
       </div>
     </div>
 
-  <div class="modal-overlay" id="insightModal">
+  <div class="modal-overlay" id="insightModal" onclick="if(event.target===this)closeInsightModal()">
     <div class="modal">
       <h2>Capture Product Insight</h2>
       <label>Quote</label>
@@ -448,6 +460,112 @@
       <div class="modal-actions" style="margin-top:16px;">
         <button class="btn-cancel" onclick="closeInsightModal()">Cancel</button>
         <button class="btn-save" onclick="saveInsight()">Save Insight</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Weekly Review Modal -->
+  <div class="modal-overlay" id="weeklyReviewModal" onclick="if(event.target===this)closeWeeklyReviewModal()">
+    <div class="modal" style="max-height:88vh;overflow-y:auto;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <h2 style="margin:0;">Weekly Review</h2>
+        <span style="font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;" id="weeklyReviewDateLabel"></span>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:16px;" id="weeklyReviewStepDots"></div>
+
+      <!-- Step 1: Wins -->
+      <div class="wr-step" id="wr-step-1">
+        <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;margin-bottom:6px;">Step 1 of 6 — Wins</div>
+        <label>What shipped this week? What went well?</label>
+        <textarea id="wr-wins" rows="4" placeholder="e.g. Sent 15 outreach DMs, wrote demo script, Kavin finished pipeline screen..."></textarea>
+      </div>
+
+      <!-- Step 2: Failures -->
+      <div class="wr-step" id="wr-step-2" style="display:none;">
+        <div style="font-size:11px;font-weight:700;color:var(--red-400);text-transform:uppercase;margin-bottom:6px;">Step 2 of 6 — Failures</div>
+        <label>What missed? Why did it not happen?</label>
+        <textarea id="wr-failures" rows="4" placeholder="e.g. Didn't do morning DW1 on Thu/Fri, no user call booked..."></textarea>
+      </div>
+
+      <!-- Step 3: Outreach numbers -->
+      <div class="wr-step" id="wr-step-3" style="display:none;">
+        <div style="font-size:11px;font-weight:700;color:var(--amber-400);text-transform:uppercase;margin-bottom:6px;">Step 3 of 6 — Outreach Numbers</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+          <div>
+            <label>New prospects reached</label>
+            <input type="number" id="wr-outreach-sent" min="0" placeholder="0">
+          </div>
+          <div>
+            <label>Replies received</label>
+            <input type="number" id="wr-outreach-replies" min="0" placeholder="0">
+          </div>
+          <div>
+            <label>Discovery calls booked</label>
+            <input type="number" id="wr-calls-booked" min="0" placeholder="0">
+          </div>
+          <div>
+            <label>Pilots / demos</label>
+            <input type="number" id="wr-pilots" min="0" placeholder="0">
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 4: Health check -->
+      <div class="wr-step" id="wr-step-4" style="display:none;">
+        <div style="font-size:11px;font-weight:700;color:var(--green-400);text-transform:uppercase;margin-bottom:6px;">Step 4 of 6 — Health Check</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px;">
+          <div>
+            <label>Avg Energy (1-5)</label>
+            <select id="wr-energy">
+              <option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option>
+            </select>
+          </div>
+          <div>
+            <label>Avg Focus (1-5)</label>
+            <select id="wr-focus">
+              <option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option>
+            </select>
+          </div>
+          <div>
+            <label>Execution (1-5)</label>
+            <select id="wr-exec">
+              <option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option>
+            </select>
+          </div>
+        </div>
+        <label>Physical (exercise, sleep, water this week)?</label>
+        <textarea id="wr-health" rows="2" placeholder="e.g. 4/7 days exercise, sleep avg 7h, water mostly ok..."></textarea>
+      </div>
+
+      <!-- Step 5: Top 3 next week -->
+      <div class="wr-step" id="wr-step-5" style="display:none;">
+        <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;margin-bottom:6px;">Step 5 of 6 — Top 3 for Next Week</div>
+        <label>ONE THING (must happen)</label>
+        <input type="text" id="wr-next1" placeholder="The single most important thing next week...">
+        <label style="margin-top:10px;">Bonus Goal 1</label>
+        <input type="text" id="wr-next2" placeholder="Second priority...">
+        <label style="margin-top:10px;">Bonus Goal 2</label>
+        <input type="text" id="wr-next3" placeholder="Third priority...">
+        <label style="margin-top:10px;">Stop doing one thing</label>
+        <input type="text" id="wr-stop" placeholder="What to cut or avoid...">
+      </div>
+
+      <!-- Step 6: Rate + self-feedback -->
+      <div class="wr-step" id="wr-step-6" style="display:none;">
+        <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;margin-bottom:6px;">Step 6 of 6 — Rate the Week</div>
+        <label>Rate this week /10</label>
+        <select id="wr-score">
+          <option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option>
+          <option value="5">5</option><option value="6">6</option><option value="7" selected>7</option><option value="8">8</option>
+          <option value="9">9</option><option value="10">10</option>
+        </select>
+        <label style="margin-top:12px;">Self-feedback (1 paragraph — be honest)</label>
+        <textarea id="wr-self-feedback" rows="5" placeholder="How did you show up this week? What pattern are you seeing? What would a better version of you have done differently?"></textarea>
+      </div>
+
+      <div class="modal-actions" style="margin-top:16px;" id="weeklyReviewActions">
+        <button class="btn-cancel" onclick="closeWeeklyReviewModal()">Cancel</button>
+        <button class="btn-save" id="weeklyReviewNextBtn" onclick="weeklyReviewNext()">Next</button>
       </div>
     </div>
   </div>
