@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Malveon Tasks</title>
   <link rel="manifest" href="./manifest.json">
-  <meta name="theme-color" content="#4f8cff">
+  <meta name="theme-color" content="#534AB7">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Malveon">
@@ -20,6 +20,7 @@
   <meta property="og:image" content="./malveon-icon-512.png">
   <meta property="og:url" content="https://malveon.github.io/">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="./style.css">
 </head>
 
@@ -49,20 +50,27 @@
 
   <!-- Main App (hidden until auth) -->
   <div id="mainApp">
+    <div class="offline-banner" id="offlineBanner">⚡ You're offline — changes saved locally</div>
+
     <div class="header">
       <div class="header-top">
-        <div>
-          <h1><span>M</span>alveon Tasks</h1>
-          <div class="date" id="dateDisplay"></div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:26px;height:26px;border-radius:6px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:#fff">M</div>
+          <div>
+            <h1 style="font-size:18px">Malveon Tasks</h1>
+            <div class="date" id="dateDisplay"></div>
+          </div>
         </div>
         <div style="display:flex;gap:12px;align-items:center">
           <div class="streak" id="streakDisplay"></div>
-          <div class="score-badge">
-            <span class="num" id="scoreNum">0</span>/10
+          <div style="position:relative;cursor:pointer" onclick="openNotifModal()">
+            <span style="font-size:18px">🔔</span>
+            <div id="notifDot" style="display:none;position:absolute;top:-2px;right:-2px;width:7px;height:7px;border-radius:50%;background:var(--red)"></div>
           </div>
+          <div class="avatar-circle" id="userAvatar">L</div>
         </div>
       </div>
-      <div class="progress-wrap" style="margin-top:12px">
+      <div class="progress-wrap" style="margin-top:10px">
         <div class="progress-fill" id="progressFill" style="width:0%"></div>
       </div>
       <div class="progress-label">
@@ -81,8 +89,30 @@
     <div class="playbook-section" id="playbookSection"></div>
     <div class="sync-section" id="syncSection" style="display:none"></div>
     <div class="reminders-section" id="remindersSection" style="display:none"></div>
+    <div id="v2Content"></div>
 
     <button class="fab" id="fabBtn" onclick="openAddModal()">+</button>
+
+    <!-- Bottom Navigation Bar -->
+    <nav class="bottom-nav" id="bottomNav">
+      <button class="bottom-nav-item active" data-section="tasks" onclick="switchSection('tasks')">
+        <span class="bottom-nav-icon">☑</span>
+        <span class="bottom-nav-label">Tasks</span>
+      </button>
+      <button class="bottom-nav-item" data-section="ops" onclick="switchSection('ops')">
+        <span class="bottom-nav-icon">⚙</span>
+        <span class="bottom-nav-label">Ops</span>
+        <div class="bottom-nav-dot" id="opsAlertDot" style="display:none"></div>
+      </button>
+      <button class="bottom-nav-item" data-section="crm" onclick="switchSection('crm')">
+        <span class="bottom-nav-icon">☆</span>
+        <span class="bottom-nav-label">CRM</span>
+      </button>
+      <button class="bottom-nav-item" data-section="analytics" onclick="switchSection('analytics')">
+        <span class="bottom-nav-icon">◈</span>
+        <span class="bottom-nav-label">Analytics</span>
+      </button>
+    </nav>
 
     <!-- Add/Edit Modal -->
     <div class="modal-overlay" id="modal">
@@ -95,6 +125,9 @@
           <option value="today">Today</option>
           <option value="daily-habits">Daily Habits</option>
           <option value="this-week">This Week</option>
+          <option value="recurring">Recurring</option>
+          <option value="compliance" disabled>Compliance (Read-only)</option>
+          <option value="pilot">Pilot</option>
           <option value="before-pilot">Before First Pilot</option>
           <option value="waiting">Waiting On</option>
           <option value="someday">Someday</option>
@@ -196,9 +229,229 @@
       </div>
     </div>
 
+    <!-- OKR Modal -->
+    <div class="modal-overlay" id="okrModal">
+      <div class="modal">
+        <h2>Set Weekly OKRs</h2>
+        <label>ONE THING (Main Focus)</label>
+        <input type="text" id="okrOneInput" placeholder="What is the single most important goal?">
+        
+        <label>Bonus Goal 1 (optional)</label>
+        <input type="text" id="okrBonus1Input" placeholder="Secondary goal...">
+        
+        <label>Bonus Goal 2 (optional)</label>
+        <input type="text" id="okrBonus2Input" placeholder="Tertiary goal...">
+        
+        <div class="modal-actions" style="margin-top: 16px;">
+          <button class="btn-cancel" onclick="closeOkrModal()">Cancel</button>
+          <button class="btn-save" onclick="saveOkr()">Save OKRs</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Recurring Task Modal -->
+    <div class="modal-overlay" id="addRecurringModal">
+      <div class="modal">
+        <h2 id="recurringModalTitle">Add/Edit Recurring Task</h2>
+        <input type="hidden" id="recurringIdInput">
+        <input type="text" id="recurringTitleInput" placeholder="Task title...">
+        
+        <label>Frequency</label>
+        <select id="recurringFrequencyInput" onchange="toggleRecurringOptions()">
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="biweekly">Bi-weekly</option>
+          <option value="monthly">Monthly</option>
+          <option value="quarterly">Quarterly</option>
+          <option value="annual">Annual</option>
+          <option value="event-based">Event Triggered</option>
+        </select>
+        
+        <div id="weeklyOptions" style="display:none; margin-top:12px;">
+          <label>Days of Week (0=Sun, 1=Mon, comma separated)</label>
+          <input type="text" id="recurringDaysInput" placeholder="e.g. 1,3,5">
+        </div>
+        
+        <div id="monthlyOptions" style="display:none; margin-top:12px;">
+          <label>Day of Month (1-31)</label>
+          <input type="number" id="recurringDayOfMonthInput" min="1" max="31" placeholder="e.g. 15">
+        </div>
+        
+        <label style="margin-top:12px;">Priority</label>
+        <select id="recurringPriorityInput">
+          <option value="high">High</option>
+          <option value="medium" selected>Medium</option>
+          <option value="low">Low</option>
+        </select>
+        
+        <label style="margin-top:12px;">Target Category</label>
+        <select id="recurringTargetInput">
+          <option value="today">Today</option>
+          <option value="this-week">This Week</option>
+          <option value="daily-habits">Daily Habits</option>
+        </select>
+        
+        <div style="display:flex; align-items:center; gap:8px; margin-top:16px;">
+          <input type="checkbox" id="recurringActiveInput" checked>
+          <label for="recurringActiveInput" style="margin:0; font-size:14px;">Active (Generate automatically)</label>
+        </div>
+
+        <div class="modal-actions" style="margin-top:16px;">
+          <button class="btn-cancel" onclick="closeAddRecurringModal()">Cancel</button>
+          <button class="btn-save" onclick="saveRecurringTask()">Save</button>
+        </div>
+      </div>
+    </div>
+
   </div><!-- /mainApp -->
 
-  <script src="./app.js"></script>
+  <script src="./app.js?v=21"></script>
+
+
+  
+  <!-- Decision Modal -->
+  <div class="modal-overlay" id="decisionModal">
+    <div class="modal">
+      <h2>Log Decision</h2>
+      <label>Decision</label>
+      <input type="text" id="decisionInput" placeholder="What was decided?">
+      <label>Reasoning</label>
+      <textarea id="decisionReasonInput" rows="3" placeholder="Why was this decided?"></textarea>
+      <label>Domain</label>
+      <select id="decisionDomainInput">
+        <option value="ops">Operations</option>
+        <option value="product">Product</option>
+        <option value="sales">Sales</option>
+        <option value="engineering">Engineering</option>
+        <option value="hiring">Hiring</option>
+        <option value="finance">Finance</option>
+      </select>
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeDecisionModal()">Cancel</button>
+        <button class="btn-save" onclick="saveDecision()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delegation Modal -->
+  <div class="modal-overlay" id="delegationModal">
+    <div class="modal">
+      <h2>Delegate Task</h2>
+      <label>Task</label>
+      <input type="text" id="delegationTaskInput" placeholder="What needs to be done?">
+      <label>Assigned To</label>
+      <input type="text" id="delegationAssigneeInput" placeholder="Who is responsible?">
+      <label>Due Date</label>
+      <input type="date" id="delegationDueDateInput">
+      <label>Notes</label>
+      <textarea id="delegationNotesInput" rows="2" placeholder="Any additional context"></textarea>
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeDelegationModal()">Cancel</button>
+        <button class="btn-save" onclick="saveDelegation()">Save</button>
+      </div>
+    </div>
+  </div>
+    <!-- Notification Modal (Phase 22) -->
+  <div class="modal-overlay" id="notifModal">
+    <div class="modal" style="max-height:80vh; overflow-y:auto;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h2 style="margin:0;">Active Alerts</h2>
+        <span style="font-size:24px; cursor:pointer;" onclick="closeNotifModal()">&times;</span>
+      </div>
+      <div id="notifList" style="margin-top:16px; display:flex; flex-direction:column; gap:8px;"></div>
+    </div>
+  </div>
+
+  <!-- CRM Modals -->
+  <div class="modal-overlay" id="prospectModal">
+    <div class="modal">
+      <h2 id="prospectModalTitle">Add Prospect</h2>
+      <input type="hidden" id="prospectIdInput">
+      <label>Full Name</label>
+      <input type="text" id="prospectNameInput" placeholder="e.g. John Doe">
+      <label>Company</label>
+      <input type="text" id="prospectCompanyInput" placeholder="e.g. Acme Corp">
+      <label>Title</label>
+      <input type="text" id="prospectTitleInput" placeholder="e.g. CTO">
+      <label>LinkedIn URL</label>
+      <input type="url" id="prospectLinkedinInput" placeholder="https://linkedin.com/in/...">
+      <label>Email</label>
+      <input type="email" id="prospectEmailInput" placeholder="john@acme.com">
+      <label>Status</label>
+      <select id="prospectStatusInput">
+        <option value="new">New</option>
+        <option value="contacted">Contacted</option>
+        <option value="discovery">Discovery</option>
+        <option value="pilot">Pilot</option>
+        <option value="won">Won</option>
+        <option value="lost">Lost</option>
+      </select>
+      <label>Notes</label>
+      <textarea id="prospectNotesInput" placeholder="Context from outreach..."></textarea>
+      <div class="modal-actions" style="margin-top:16px;">
+        <button class="btn-cancel" onclick="closeProspectModal()">Cancel</button>
+        <button class="btn-save" onclick="saveProspect()">Save Prospect</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="detail-overlay" id="prospectDetailOverlay">
+    <div class="detail-panel" id="prospectDetailPanel" style="padding:0;"></div>
+  </div>
+
+  <div class="modal-overlay" id="pilotModal">
+      <div class="modal">
+        <h2>Add New Pilot</h2>
+        <label>Company Name</label>
+        <input type="text" id="pilotCompanyInput" placeholder="Acme Corp">
+        <label>Main Contact Name</label>
+        <input type="text" id="pilotContactNameInput" placeholder="Jane Smith">
+        <label>Contact Email</label>
+        <input type="email" id="pilotContactEmailInput" placeholder="jane@acme.com">
+        <label>Start Date</label>
+        <input type="date" id="pilotStartDateInput">
+        <label>Success Metric</label>
+        <textarea id="pilotMetricInput" placeholder="What does success look like?"></textarea>
+        <label>MRR ($)</label>
+        <input type="number" id="pilotMrrInput" value="99">
+        <div class="modal-actions" style="margin-top:16px;">
+          <button class="btn-cancel" onclick="closePilotModal()">Cancel</button>
+          <button class="btn-save" onclick="savePilot()">Start Pilot</button>
+        </div>
+      </div>
+    </div>
+
+  <div class="modal-overlay" id="insightModal">
+    <div class="modal">
+      <h2>Capture Product Insight</h2>
+      <label>Quote</label>
+      <textarea id="insightQuoteInput" placeholder="Use their exact words..." style="min-height:100px"></textarea>
+      <label>Contact Name</label>
+      <input type="text" id="insightContactInput" placeholder="Jane Smith">
+      <label>Company</label>
+      <input type="text" id="insightCompanyInput" placeholder="Acme Corp">
+      <label>Theme</label>
+      <select id="insightThemeInput">
+        <option value="incident-triage">Incident Triage</option>
+        <option value="context-loss">Context Loss</option>
+        <option value="jira-gap">Jira Gap</option>
+        <option value="hiring">Hiring / Team</option>
+        <option value="other">Other</option>
+      </select>
+      <label>Source</label>
+      <select id="insightSourceInput">
+        <option value="discovery-call">Discovery Call</option>
+        <option value="onboarding">Onboarding</option>
+        <option value="slack">Slack / Intercom</option>
+        <option value="review">Review Call</option>
+      </select>
+      <div class="modal-actions" style="margin-top:16px;">
+        <button class="btn-cancel" onclick="closeInsightModal()">Cancel</button>
+        <button class="btn-save" onclick="saveInsight()">Save Insight</button>
+      </div>
+    </div>
+  </div>
+
 </body>
 
 </html>
