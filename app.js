@@ -21,6 +21,8 @@ const DELEGATIONS_KEY = 'malveon_delegations';
 // Supabase client
 let sb = null;
 let currentUser = null;
+let lastAutoSync = null;
+let modalDependencies = []; // Track dependencies in the active modal
 let realtimeChannel = null;
 let isSyncing = false;
 let deletedTaskTexts = new Set();
@@ -38,6 +40,11 @@ let insights = [];
 let decisions = [];
 let delegations = [];
 let recurringTasks = [];
+
+// V3 Data arrays
+let outreach_logs = [];
+let expenses = [];
+let milestones = [];
 
 try {
   sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -116,7 +123,7 @@ const defaultTasks = [
 ];
 
 const catLabels = {
-  'today': 'Today', 'daily-habits': 'Daily Habits', 'this-week': 'This Week', 'before-pilot': 'Before Pilot',
+  'inbox': 'Inbox', 'today': 'Today', 'daily-habits': 'Daily Habits', 'this-week': 'This Week', 'before-pilot': 'Before Pilot',
   'waiting': 'Waiting', 'someday': 'Someday', 'playbook': 'Playbook',
   'done': 'Done', 'history': 'History', 'sync': 'Sync', 'reminders': 'Reminders'
 };
@@ -205,25 +212,99 @@ let dailyLog = [];
 let resources = [];
 let editingResourceId = null;
 
+// ===================== V3 SYNC & SAVE =====================
+async function syncOutreachLogs() {
+  if (!currentUser || !sb) return;
+  const { data, error } = await sb.from('outreach_logs').select('*').eq('user_id', currentUser.id).order('date', { ascending: false });
+  if (!error && data) outreach_logs = data;
+}
+async function saveOutreachLog(dateStr, data) {
+  if (!currentUser || !sb) return;
+  const row = { user_id: currentUser.id, date: dateStr, ...data, updated_at: new Date().toISOString() };
+  if (navigator.onLine) {
+    const { error } = await sb.from('outreach_logs').upsert(row, { onConflict: 'user_id, date' });
+    if (error) queueChange('outreach_logs', 'upsert', row);
+  } else { queueChange('outreach_logs', 'upsert', row); }
+}
+function getOutreachLog(dateStr) { return outreach_logs.find(l => l.date === dateStr) || null; }
+
+async function syncExpenses() {
+  if (!currentUser || !sb) return;
+  const { data, error } = await sb.from('expenses').select('*').eq('user_id', currentUser.id).order('date', { ascending: false });
+  if (!error && data) expenses = data;
+}
+async function saveExpense(data) {
+  if (!currentUser || !sb) return;
+  const row = { id: data.id || uuidv4(), user_id: currentUser.id, ...data };
+  if (navigator.onLine) {
+    const { error } = await sb.from('expenses').upsert(row, { onConflict: 'id' });
+    if (error) queueChange('expenses', 'upsert', row);
+  } else { queueChange('expenses', 'upsert', row); }
+}
+async function deleteExpense(id) {
+  if (!currentUser || !sb) return;
+  expenses = expenses.filter(e => e.id !== id);
+  if (navigator.onLine) {
+    const { error } = await sb.from('expenses').delete().eq('id', id);
+    if (error) queueChange('expenses', 'delete', { id });
+  } else { queueChange('expenses', 'delete', { id }); }
+}
+
+async function syncMilestones() {
+  if (!currentUser || !sb) return;
+  const { data, error } = await sb.from('milestones').select('*').eq('user_id', currentUser.id).order('sort_order', { ascending: true });
+  if (!error && data) {
+    milestones = data;
+    if (milestones.length === 0) seedDefaultMilestones();
+  }
+}
+async function saveMilestone(data) {
+  if (!currentUser || !sb) return;
+  const row = { id: data.id || uuidv4(), user_id: currentUser.id, ...data };
+  if (navigator.onLine) {
+    const { error } = await sb.from('milestones').upsert(row, { onConflict: 'id' });
+    if (error) queueChange('milestones', 'upsert', row);
+  } else { queueChange('milestones', 'upsert', row); }
+}
+async function updateMilestoneProgress(id, currentValue) {
+  const m = milestones.find(x => x.id === id);
+  if (m) {
+    m.current_value = currentValue;
+    if (m.current_value >= m.target_value) m.achieved_date = new Date().toISOString().split('T')[0];
+    await saveMilestone(m);
+  }
+}
+function seedDefaultMilestones() {
+  const defaults = [
+    { title: 'First paying pilot customer', target_date: '2026-07-31', target_value: 99, current_value: 0, unit: 'MRR', category: 'Revenue', sort_order: 1 },
+    { title: '$1,000 MRR', target_date: '2026-09-30', target_value: 1000, current_value: 0, unit: 'MRR', category: 'Revenue', sort_order: 2 },
+    { title: '$4,000 MRR', target_date: '2026-12-31', target_value: 4000, current_value: 0, unit: 'MRR', category: 'Revenue', sort_order: 3 },
+    { title: '10 paying customers', target_date: '2026-12-31', target_value: 10, current_value: 0, unit: 'Customers', category: 'Revenue', sort_order: 4 },
+    { title: 'Pvt Ltd incorporated', target_date: '2026-04-30', target_value: 1, current_value: 0, unit: 'Status', category: 'General', sort_order: 5 },
+    { title: 'YC W2027 application submitted', target_date: '2026-10-31', target_value: 1, current_value: 0, unit: 'Status', category: 'General', sort_order: 6 }
+  ];
+  defaults.forEach(d => saveMilestone(d));
+}
+
 // ===================== V2 NAVIGATION STATE =====================
 let activeSection = localStorage.getItem(NAV_KEY) || 'tasks';
 let activeTopTab = null; // set per section
 
 const SECTIONS = {
-  tasks: ['Today', 'Habits', 'This Week', 'Recurring', 'Reminders', 'Done'],
-  ops: ['Compliance', 'OKR', 'Decisions', 'Delegation', 'Review', 'Playbook'],
+  tasks: ['Inbox', 'Today', 'Habits', 'This Week', 'Recurring', 'Calendar', 'Domains', 'Kavin', 'Reminders', 'Done'],
+  ops: ['Compliance', 'OKR', 'Milestones', 'Decisions', 'Delegation', 'Review', 'Playbook'],
   crm: ['Pipeline', 'Pilots', 'Insights'],
-  analytics: ['History', 'Velocity', 'Domains', 'Workload', 'Sync']
+  analytics: ['Outreach', 'Runway', 'History', 'Velocity', 'Workload', 'Sync']
 };
 
 // Map V2 top tab names back to legacy activeTab values for backward compat
 const TAB_TO_LEGACY = {
-  'Today': 'today', 'Habits': 'daily-habits', 'This Week': 'this-week',
-  'Recurring': 'recurring', 'Reminders': 'reminders', 'Done': 'done',
-  'Compliance': 'compliance', 'OKR': 'okr', 'Decisions': 'decisions',
+  'Inbox': 'inbox', 'Today': 'today', 'Habits': 'daily-habits', 'This Week': 'this-week',
+  'Recurring': 'recurring', 'Reminders': 'reminders', 'Calendar': 'calendar', 'Domains': 'domains', 'Kavin': 'kavin', 'Done': 'done',
+  'Compliance': 'compliance', 'OKR': 'okr', 'Milestones': 'milestones', 'Decisions': 'decisions',
   'Delegation': 'delegation', 'Review': 'review', 'Playbook': 'playbook',
   'Pipeline': 'pipeline', 'Pilots': 'pilots', 'Insights': 'insights',
-  'History': 'history', 'Velocity': 'velocity', 'Domains': 'domains',
+  'Outreach': 'outreach', 'Runway': 'runway', 'History': 'history', 'Velocity': 'velocity',
   'Workload': 'workload', 'Sync': 'sync'
 };
 
@@ -251,8 +332,14 @@ function switchTab(tabName) {
   if (fabBtn) fabBtn.style.display = (['history', 'velocity', 'domains', 'workload', 'sync', 'review'].includes(legacyTab)) ? 'none' : 'flex';
   // Quick capture visibility
   const quickCap = document.getElementById('quickCapture');
-  const showQuick = ['today', 'daily-habits', 'this-week', 'before-pilot', 'waiting', 'someday', 'reminders'].includes(legacyTab);
+  const showQuick = ['inbox', 'today', 'daily-habits', 'this-week', 'before-pilot', 'waiting', 'someday', 'reminders'].includes(legacyTab);
   if (quickCap) quickCap.style.display = showQuick ? 'flex' : 'none';
+
+  // V3 components visibility
+  const v3Tb = document.getElementById('v3Toolbar');
+  if (v3Tb) v3Tb.style.display = (activeSection === 'tasks') ? 'flex' : 'none';
+  const quickAddFab = document.getElementById('quickAddFab');
+  if (quickAddFab) quickAddFab.style.display = (activeSection === 'tasks') ? 'flex' : 'none';
 }
 
 function renderBottomNav() {
@@ -326,6 +413,42 @@ function renderScreen() {
     document.getElementById('remindersSection').style.display = 'none';
     document.getElementById('reviewPrompt').innerHTML = '';
     renderThisWeek();
+    return;
+  }
+
+  // Phase 2: V3 Domains Screen
+  if (legacy === 'domains') {
+    activeTab = 'domains';
+    document.getElementById('taskList').innerHTML = '';
+    document.getElementById('syncSection').style.display = 'none';
+    document.getElementById('playbookSection').style.display = 'none';
+    document.getElementById('remindersSection').style.display = 'none';
+    document.getElementById('reviewPrompt').innerHTML = '';
+    renderDomainView();
+    return;
+  }
+
+  // Phase 2: V3 Kavin Screen
+  if (legacy === 'kavin') {
+    activeTab = 'kavin';
+    document.getElementById('taskList').innerHTML = '';
+    document.getElementById('syncSection').style.display = 'none';
+    document.getElementById('playbookSection').style.display = 'none';
+    document.getElementById('remindersSection').style.display = 'none';
+    document.getElementById('reviewPrompt').innerHTML = '';
+    renderKavinView();
+    return;
+  }
+
+  // Phase 2: V3 Calendar Screen
+  if (legacy === 'calendar') {
+    activeTab = 'calendar';
+    document.getElementById('taskList').innerHTML = '';
+    document.getElementById('syncSection').style.display = 'none';
+    document.getElementById('playbookSection').style.display = 'none';
+    document.getElementById('remindersSection').style.display = 'none';
+    document.getElementById('reviewPrompt').innerHTML = '';
+    renderCalendarView();
     return;
   }
 
@@ -460,6 +583,42 @@ function renderScreen() {
     document.getElementById('remindersSection').style.display = 'none';
     document.getElementById('reviewPrompt').innerHTML = '';
     renderVelocity();
+    return;
+  }
+
+  // Phase 3.1: Outreach Analytics
+  if (legacy === 'outreach') {
+    activeTab = 'outreach';
+    document.getElementById('taskList').innerHTML = '';
+    document.getElementById('syncSection').style.display = 'none';
+    document.getElementById('playbookSection').style.display = 'none';
+    document.getElementById('remindersSection').style.display = 'none';
+    document.getElementById('reviewPrompt').innerHTML = '';
+    renderOutreachAnalytics();
+    return;
+  }
+
+  // Phase 3.3: Runway Component
+  if (legacy === 'runway') {
+    activeTab = 'runway';
+    document.getElementById('taskList').innerHTML = '';
+    document.getElementById('syncSection').style.display = 'none';
+    document.getElementById('playbookSection').style.display = 'none';
+    document.getElementById('remindersSection').style.display = 'none';
+    document.getElementById('reviewPrompt').innerHTML = '';
+    renderRunway();
+    return;
+  }
+
+  // Phase 3.2: Milestone Tracker
+  if (legacy === 'milestones') {
+    activeTab = 'milestones';
+    document.getElementById('taskList').innerHTML = '';
+    document.getElementById('syncSection').style.display = 'none';
+    document.getElementById('playbookSection').style.display = 'none';
+    document.getElementById('remindersSection').style.display = 'none';
+    document.getElementById('reviewPrompt').innerHTML = '';
+    renderMilestones();
     return;
   }
 
@@ -672,6 +831,13 @@ function taskToRow(t) {
     streak: t.streak || 0,
     last_streak_date: t.lastStreakDate || null,
     reminder_time: t.reminderTime || null,
+    domain: t.domain || 'General',
+    due_date: t.dueDate || null,
+    status: t.status || 'not-started',
+    phase: t.phase || null,
+    owner: t.owner || 'Ladson',
+    dependencies: t.dependencies || [],
+    okr_id: t.okrId || null,
     updated_at: t.updatedAt || new Date().toISOString()
   };
 }
@@ -691,6 +857,13 @@ function rowToTask(r) {
     streak: r.streak || 0,
     lastStreakDate: r.last_streak_date || null,
     reminderTime: r.reminder_time || null,
+    domain: r.domain || 'General',
+    dueDate: r.due_date || null,
+    status: r.status || 'not-started',
+    phase: r.phase || null,
+    owner: r.owner || 'Ladson',
+    dependencies: r.dependencies || [],
+    okrId: r.okr_id || null,
     updatedAt: r.updated_at
   };
 }
@@ -1299,6 +1472,11 @@ async function syncFromSupabase() {
     console.log('Sync error:', e);
   }
 
+  // V3 Syncs
+  await syncOutreachLogs();
+  await syncExpenses();
+  await syncMilestones();
+
   isSyncing = false;
   renderTopTabs();
   renderScreen();
@@ -1552,6 +1730,9 @@ function saveDailyLog() {
 
 // ===================== APP START =====================
 async function startApp() {
+  // Phase 5.3: Check heartbeat before anything else
+  if (workspaceDirHandle) checkTaskHeartbeat();
+
   if (!sb) {
     // Supabase not available, go straight to app
     showMainApp();
@@ -2509,8 +2690,56 @@ function markComplianceDone(id) {
     renderCompliance();
     renderBottomNav();
   } catch (e) {
-    console.error('Failed to mark compliance done', e);
   }
+}
+
+// ===================== CUSTOM COMPLIANCE =====================
+const CUSTOM_COMPLIANCE_KEY = 'malveon_custom_compliance';
+
+function openCustomComplianceModal() {
+  document.getElementById('ccTitleInput').value = '';
+  document.getElementById('ccFreqInput').value = 'monthly';
+  document.getElementById('ccMonthInput').value = '';
+  document.getElementById('ccDayInput').value = '';
+  document.getElementById('ccDescInput').value = '';
+  toggleCcFreq();
+  document.getElementById('customComplianceModal').classList.add('open');
+}
+
+function closeCustomComplianceModal() {
+  document.getElementById('customComplianceModal').classList.remove('open');
+}
+
+function toggleCcFreq() {
+  const freq = document.getElementById('ccFreqInput').value;
+  document.getElementById('ccMonthGroup').style.display = (freq === 'annual' || freq === 'quarterly') ? 'block' : 'none';
+}
+
+function saveCustomCompliance() {
+  const title = document.getElementById('ccTitleInput').value.trim();
+  const freq = document.getElementById('ccFreqInput').value;
+  const month = parseInt(document.getElementById('ccMonthInput').value, 10);
+  const day = parseInt(document.getElementById('ccDayInput').value, 10);
+  const desc = document.getElementById('ccDescInput').value.trim();
+
+  if (!title || !day) return;
+  
+  const newItem = {
+    id: 'cc_' + Date.now(),
+    title, freq, desc, penalty: 'Custom',
+    day: day
+  };
+  if (freq === 'annual' || freq === 'quarterly') {
+    if (isNaN(month)) return;
+    newItem.month = month - 1;
+  }
+
+  const customItems = JSON.parse(localStorage.getItem(CUSTOM_COMPLIANCE_KEY) || '[]');
+  customItems.push(newItem);
+  localStorage.setItem(CUSTOM_COMPLIANCE_KEY, JSON.stringify(customItems));
+  
+  closeCustomComplianceModal();
+  renderCompliance();
 }
 
 function renderCompliance() {
@@ -2520,7 +2749,10 @@ function renderCompliance() {
   let userState = {};
   try { userState = JSON.parse(localStorage.getItem(COMPLIANCE_KEY) || '{}'); } catch(e) {}
 
-  const items = COMPLIANCE_METADATA.map(m => {
+  const customItems = JSON.parse(localStorage.getItem(CUSTOM_COMPLIANCE_KEY) || '[]');
+  const allMeta = [...COMPLIANCE_METADATA, ...customItems];
+
+  const items = allMeta.map(m => {
     const lastDone = userState[m.id]?.lastDoneDate;
     const dueDate = calcComplianceDueDate(m, lastDone);
     const status = getComplianceStatus(dueDate, lastDone);
@@ -2537,8 +2769,11 @@ function renderCompliance() {
   const redCount = items.filter(i => i.status === 'red').length;
   const yellowCount = items.filter(i => i.status === 'yellow').length;
   const greenCount = items.filter(i => i.status === 'green').length;
-
   let html = `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <h2 style="margin:0; font-size:18px;">Compliance Ops</h2>
+      <button onclick="openCustomComplianceModal()" style="background:var(--teal-400); color:white; border:none; padding:6px 12px; border-radius:12px; font-size:12px; font-weight:600; cursor:pointer;">+ Add Custom</button>
+    </div>
     <div class="metric-cards-row" style="margin-bottom:24px;">
       ${metricCard('Overdue', redCount, redCount > 0 ? 'red' : '')}
       ${metricCard('Due Soon', yellowCount, yellowCount > 0 ? 'amber' : '')}
@@ -2598,6 +2833,34 @@ function renderCompliance() {
 }
 
 // ===================== V2 OKR SCREEN =====================
+function renderOkrTasks(okrName) {
+  if (!okrName) return '';
+  const linked = tasks.filter(t => t.okrId === okrName);
+  if (linked.length === 0) return '';
+  const done = linked.filter(t => t.done).length;
+  const pct = Math.round((done / linked.length) * 100);
+  let s = `
+    <div style="margin-top:16px; background:rgba(0,0,0,0.1); border-radius:8px; padding:12px;">
+      <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:8px;">
+        <span style="color:var(--text); font-weight:600;">Linked Tasks</span>
+        <span style="color:var(--text-muted);">${done}/${linked.length} (${pct}%)</span>
+      </div>
+      <div style="height:4px; background:rgba(255,255,255,0.05); border-radius:4px; overflow:hidden; margin-bottom:12px;">
+        <div style="width:${pct}%; height:100%; background:var(--accent);"></div>
+      </div>
+      <details>
+        <summary style="font-size:12px; color:var(--teal-400); cursor:pointer; font-weight:600; outline:none;">Show ${linked.length} tasks</summary>
+        <div style="margin-top:8px; display:flex; flex-direction:column; gap:6px;">
+          ${linked.map(t => `<div style="font-size:13px; display:flex; gap:8px; color:${t.done ? 'var(--text-muted)' : 'var(--text)'}; text-decoration:${t.done ? 'line-through' : 'none'}; cursor:pointer;" onclick="openTaskDetail('${t.id}')">
+            ${statusDot(t.done ? 'green' : 'yellow')} ${esc(t.text)}
+          </div>`).join('')}
+        </div>
+      </details>
+    </div>
+  `;
+  return s;
+}
+
 function renderOkrTab() {
   const v2 = document.getElementById('v2Content');
   if (!v2) return;
@@ -2628,10 +2891,13 @@ function renderOkrTab() {
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <div style="font-size:12px; font-weight:600; color:${color};">${progress}% Complete</div>
           <div style="display:flex; gap:12px;">
-            ${currentOkr.bonus1 ? `<div style="font-size:11px; color:${currentOkr.bonus1Done ? 'var(--green-400)' : 'var(--text-muted)'}; font-weight:600;">Bonus 1 ${currentOkr.bonus1Done ? '✓' : '○'}</div>` : ''}
-            ${currentOkr.bonus2 ? `<div style="font-size:11px; color:${currentOkr.bonus2Done ? 'var(--green-400)' : 'var(--text-muted)'}; font-weight:600;">Bonus 2 ${currentOkr.bonus2Done ? '✓' : '○'}</div>` : ''}
+            ${currentOkr.bonus1 ? `<div style="font-size:11px; color:${currentOkr.bonus1Done ? 'var(--green-400)' : 'var(--text-muted)'}; font-weight:600;" title="${esc(currentOkr.bonus1)}">Bonus 1 ${currentOkr.bonus1Done ? '✓' : '○'}</div>` : ''}
+            ${currentOkr.bonus2 ? `<div style="font-size:11px; color:${currentOkr.bonus2Done ? 'var(--green-400)' : 'var(--text-muted)'}; font-weight:600;" title="${esc(currentOkr.bonus2)}">Bonus 2 ${currentOkr.bonus2Done ? '✓' : '○'}</div>` : ''}
           </div>
         </div>
+        ${renderOkrTasks(currentOkr.one)}
+        ${renderOkrTasks(currentOkr.bonus1)}
+        ${renderOkrTasks(currentOkr.bonus2)}
       </div>
     `;
   } else {
@@ -2661,6 +2927,7 @@ function renderOkrTab() {
           <div style="height:3px; background:rgba(255,255,255,0.05); border-radius:10px; overflow:hidden;">
             <div style="width:${progress}%; height:100%; background:${color};"></div>
           </div>
+          ${renderOkrTasks(okr.one)}
         </div>
       `;
     });
@@ -2693,7 +2960,10 @@ function renderPipeline(filter = 'all') {
     <div style="margin-bottom:24px;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
         <h2 style="margin:0; font-size:18px;">Sales Pipeline</h2>
-        <button onclick="openAddProspectModal()" class="v2-button-teal" style="padding:6px 12px; font-size:12px;">+ Prospect</button>
+        <div style="display:flex; gap:8px;">
+          <button onclick="importProspectsFromStagingFile()" class="v2-button-secondary" style="padding:6px 12px; font-size:12px;">Import from Prep</button>
+          <button onclick="openAddProspectModal()" class="v2-button-teal" style="padding:6px 12px; font-size:12px;">+ Prospect</button>
+        </div>
       </div>
   `;
 
@@ -3259,12 +3529,198 @@ function renderDone() {
   v2.innerHTML = html;
 }
 
+// ===================== V3 SEARCH & BULK =====================
+let currentSearchQuery = '';
+let bulkMode = false;
+
+function searchTasks(query) { currentSearchQuery = query.toLowerCase(); renderTasks(); }
+
+function toggleBulkActions() {
+  bulkMode = !bulkMode;
+  document.getElementById('bulkActionBar').style.display = bulkMode ? 'flex' : 'none';
+  renderTasks();
+}
+
+function updateBulkCount() {
+  const count = document.querySelectorAll('.bulk-checkbox:checked').length;
+  document.getElementById('bulkCount').textContent = count;
+}
+
+async function applyBulkAction(type, value) {
+  const checked = document.querySelectorAll('.bulk-checkbox:checked');
+  if (checked.length === 0) return;
+  for (let cb of checked) {
+    const id = cb.value;
+    const t = tasks.find(x => x.id === id);
+    if (!t) continue;
+    if (type === 'delete') {
+      tasks = tasks.filter(x => x.id !== id);
+      deleteTaskFromSupabase(id);
+    } else if (type === 'status') {
+      if (!value) continue;
+      t.status = value;
+      t.done = (value === 'done');
+      t.updatedAt = new Date().toISOString();
+      pushTaskToSupabase(t);
+    } else if (type === 'phase') {
+      if (!value) continue;
+      t.phase = value;
+      t.updatedAt = new Date().toISOString();
+      pushTaskToSupabase(t);
+    }
+  }
+  save();
+  toggleBulkActions(); 
+}
+
+// ===================== V3 DOMAINS, KAVIN, CALENDAR =====================
+const DOMAINS = ['General', 'Product', 'Engineering', 'Sales', 'Marketing', 'Operations', 'Design', 'Finance', 'Legal', 'HR', 'Support', 'Growth'];
+const DOMAIN_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#6366f1', '#a855f7', '#d946ef'];
+
+function renderDomainView() {
+  const tb = document.getElementById('v3Toolbar');
+  if (tb) tb.style.display = 'none';
+
+  let html = `<div class="domains-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:16px;">`;
+  
+  DOMAINS.forEach((dom, i) => {
+    const domTasks = tasks.filter(t => (t.domain || 'General') === dom);
+    const total = domTasks.length;
+    const notStarted = domTasks.filter(t => (t.status || 'not-started') === 'not-started').length;
+    const inProgress = domTasks.filter(t => t.status === 'in-progress').length;
+    const blocked = domTasks.filter(t => t.status === 'blocked').length;
+    
+    html += `
+      <div class="view-card" style="border-left: 4px solid ${DOMAIN_COLORS[i]}; cursor: pointer;" onclick="filterByDomain('${dom}')">
+        <h3 style="margin:0 0 4px 0;">${dom}</h3>
+        <p style="font-size:24px; font-weight:600; margin:0 0 8px 0;">${total} <span style="font-size:12px;font-weight:normal;color:var(--text-light);">tasks</span></p>
+        <div style="font-size:12px; color:var(--text-light); display:flex; gap:8px;">
+          <span>○ ${notStarted}</span>
+          <span style="color:#3b82f6;">◑ ${inProgress}</span>
+          <span style="color:#ef4444;">⊗ ${blocked}</span>
+        </div>
+      </div>
+    `;
+  });
+  html += `</div>`;
+  document.getElementById('taskList').innerHTML = html;
+}
+
+function filterByDomain(dom) {
+  switchTab('Inbox');
+  const searchInput = document.getElementById('searchInput');
+  if (searchInput) searchInput.value = dom;
+  searchTasks(dom);
+}
+
+function renderKavinView() {
+  renderTasks();
+}
+
+let currentCalendarDate = new Date();
+
+function renderCalendarView() {
+  const tb = document.getElementById('v3Toolbar');
+  if (tb) tb.style.display = 'none';
+
+  const year = currentCalendarDate.getFullYear();
+  const month = currentCalendarDate.getMonth();
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const daysInMonth = lastDay.getDate();
+  const startDayOfWeek = firstDay.getDay(); 
+  
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  
+  let html = `
+    <div class="calendar-header" style="display:flex; justify-content:space-between; align-items:center; padding:16px;">
+      <h2 style="margin:0;">${monthNames[month]} ${year}</h2>
+      <div>
+        <button class="btn-cancel" style="padding:6px 12px; margin-right:8px;" onclick="changeCalendarMonth(-1)">◀</button>
+        <button class="btn-cancel" style="padding:6px 12px;" onclick="changeCalendarMonth(1)">▶</button>
+      </div>
+    </div>
+    <div class="calendar-grid" style="display:grid; grid-template-columns:repeat(7, 1fr); gap:4px; padding:0 16px;">
+      <div style="text-align:center; font-weight:bold; font-size:12px; color:var(--text-light); padding-bottom:8px;">Sun</div>
+      <div style="text-align:center; font-weight:bold; font-size:12px; color:var(--text-light); padding-bottom:8px;">Mon</div>
+      <div style="text-align:center; font-weight:bold; font-size:12px; color:var(--text-light); padding-bottom:8px;">Tue</div>
+      <div style="text-align:center; font-weight:bold; font-size:12px; color:var(--text-light); padding-bottom:8px;">Wed</div>
+      <div style="text-align:center; font-weight:bold; font-size:12px; color:var(--text-light); padding-bottom:8px;">Thu</div>
+      <div style="text-align:center; font-weight:bold; font-size:12px; color:var(--text-light); padding-bottom:8px;">Fri</div>
+      <div style="text-align:center; font-weight:bold; font-size:12px; color:var(--text-light); padding-bottom:8px;">Sat</div>
+  `;
+
+  for (let i = 0; i < startDayOfWeek; i++) {
+    html += `<div class="calendar-day empty" style="min-height:80px; background:var(--bg); border:1px dashed var(--border); border-radius:8px;"></div>`;
+  }
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dStr = `${year}-${String(month+1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const isToday = dStr === todayStr;
+    const dayTasks = tasks.filter(t => t.dueDate === dStr && !t.done);
+    
+    let dotsHtml = `<div style="display:flex; flex-wrap:wrap; gap:4px; margin-top:4px;">`;
+    dayTasks.slice(0, 5).forEach(t => {
+      const pColor = t.priority === 'high' ? 'var(--red)' : (t.priority === 'medium' ? 'var(--yellow)' : 'var(--blue)');
+      dotsHtml += `<div title="${esc(t.text)}" style="width:8px; height:8px; border-radius:50%; background:${pColor};"></div>`;
+    });
+    if (dayTasks.length > 5) dotsHtml += `<div style="font-size:10px; color:var(--text-light);">+${dayTasks.length - 5}</div>`;
+    dotsHtml += `</div>`;
+
+    html += `
+      <div class="calendar-day" style="min-height:80px; background:var(--bg); border:1px solid ${isToday ? 'var(--accent)' : 'var(--border)'}; border-radius:8px; padding:8px; cursor:pointer;" onclick="openDayTasks('${dStr}')">
+        <span style="font-size:14px; font-weight:${isToday ? 'bold' : 'normal'}; color:${isToday ? 'var(--accent)' : 'var(--text)'};">${day}</span>
+        ${dotsHtml}
+      </div>`;
+  }
+  html += `</div>`;
+
+  const noDateTasks = tasks.filter(t => !t.dueDate && !t.done && t.cat !== 'reminders' && t.cat !== 'someday');
+  html += `
+    <div style="padding:24px 16px;">
+      <h3 style="margin-bottom:8px;">No Due Date <span style="font-size:14px; color:var(--text-light); font-weight:normal;">(${noDateTasks.length})</span></h3>
+      <p style="font-size:14px; color:var(--text-light);">Tasks missing a target date. Click any task to assign a date.</p>
+    </div>
+  `;
+
+  document.getElementById('taskList').innerHTML = html;
+}
+
+function changeCalendarMonth(delta) {
+  currentCalendarDate.setMonth(currentCalendarDate.getMonth() + delta);
+  renderCalendarView();
+}
+
+function openDayTasks(dateStr) {
+  switchTab('Inbox');
+  const searchInput = document.getElementById('searchInput');
+  if (searchInput) searchInput.value = dateStr;
+  searchTasks(dateStr);
+}
+
 // ===================== RENDER TASKS =====================
 function renderTasks() {
+  const tb = document.getElementById('v3Toolbar');
+  if (tb) tb.style.display = 'flex';
+
   const el = document.getElementById('taskList');
   let filtered;
-  if (activeTab === 'done') {
+  
+  if (currentSearchQuery) {
+    filtered = tasks.filter(t => 
+      t.text.toLowerCase().includes(currentSearchQuery) || 
+      (t.notes && t.notes.toLowerCase().includes(currentSearchQuery)) ||
+      (t.domain && t.domain.toLowerCase().includes(currentSearchQuery)) ||
+      (t.phase && t.phase.toLowerCase().includes(currentSearchQuery)) ||
+      (t.status && t.status.toLowerCase().includes(currentSearchQuery)) ||
+      (t.owner && t.owner.toLowerCase().includes(currentSearchQuery))
+    );
+  } else if (activeTab === 'done') {
     filtered = tasks.filter(t => t.done);
+  } else if (activeTab === 'kavin') {
+    filtered = tasks.filter(t => (t.owner === 'Kavin' || t.owner === 'Both') && !t.done);
   } else {
     filtered = tasks.filter(t => t.cat === activeTab && !t.done);
   }
@@ -3274,14 +3730,15 @@ function renderTasks() {
     return;
   }
 
-  // Check for duplicates in this section
   const seen = new Set();
   let dupeCount = 0;
-  filtered.forEach(t => {
-    const key = t.text.trim().toLowerCase();
-    if (seen.has(key)) dupeCount++;
-    else seen.add(key);
-  });
+  if (!currentSearchQuery) {
+    filtered.forEach(t => {
+      const key = t.text.trim().toLowerCase();
+      if (seen.has(key)) dupeCount++;
+      else seen.add(key);
+    });
+  }
 
   let sectionActionsHtml = '';
   if (dupeCount > 0) {
@@ -3301,10 +3758,32 @@ function renderTasks() {
     const subsDone = subs.filter(s => s.done).length;
     const subsTotal = subs.length;
     const streakVal = t.streak || 0;
+    
+    const clickAction = bulkMode ? '' : `onclick="openTaskDetail('${t.id}')"`;
+    const checkboxHtml = bulkMode 
+      ? `<input type="checkbox" class="bulk-checkbox" value="${t.id}" onchange="updateBulkCount()">`
+      : `<div class="checkbox ${t.done ? 'checked' : ''}" onclick="event.stopPropagation();toggleTask('${t.id}')"></div>`;
+
+    let v3Tags = '';
+    if (t.domain && t.domain !== 'General') v3Tags += `<span class="tag category">${t.domain}</span>`;
+    if (t.phase) v3Tags += `<span class="tag" style="background:var(--purple-50);color:var(--purple-600);">${t.phase}</span>`;
+    if (t.status && t.status !== 'not-started' && t.status !== 'done') v3Tags += `<span class="tag" style="background:var(--yellow-100);color:var(--yellow-900);">${t.status}</span>`;
+    if (t.dueDate) v3Tags += `<span class="tag" style="background:var(--red-50);color:var(--red-600);">${t.dueDate}</span>`;
+    if (t.owner && t.owner !== 'Ladson') v3Tags += `<span class="tag" style="background:var(--gray-100);">${t.owner}</span>`;
+
+    const incompleteDeps = (t.dependencies || []).filter(depId => {
+      const dt = tasks.find(x => x.id === depId);
+      return dt && !dt.done;
+    });
+    if (incompleteDeps.length > 0) {
+      if (t.status !== 'blocked') { t.status = 'blocked'; pushTaskToSupabase(t); }
+      v3Tags += `<span class="tag" style="background:var(--red-50);color:var(--red-600);">⊗ Blocked by ${incompleteDeps.length} dep${incompleteDeps.length > 1 ? 's' : ''}</span>`;
+    }
+
     return `
     <div class="task-item ${t.done ? 'done' : ''} ${t.priority || 'low'}-left">
-      <div class="checkbox ${t.done ? 'checked' : ''}" onclick="event.stopPropagation();toggleTask('${t.id}')"></div>
-      <div class="task-content" onclick="openTaskDetail('${t.id}')">
+      ${checkboxHtml}
+      <div class="task-content" ${clickAction}>
         <div class="task-text">${esc(t.text)}</div>
         <div class="task-meta">
           <span class="badge ${t.priority || 'low'}">${t.priority}</span>
@@ -3313,6 +3792,7 @@ function renderTasks() {
           ${subsTotal > 0 ? `<span class="subtask-inline">${subsDone}/${subsTotal}</span>` : ''}
           ${t.daily && streakVal >= 1 ? `<span class="rec-tag">🔥 ${streakVal}d</span>` : ''}
           ${t.reminderTime ? `<span class="rec-tag">⏰ ${t.reminderTime}</span>` : ''}
+          ${v3Tags}
         </div>
       </div>
     </div>`;
@@ -3645,6 +4125,152 @@ function renderHistoryV2() {
 }
 
 // ===================== V2 VELOCITY SCREEN =====================
+// ===================== PHASE 3.1 OUTREACH ANALYTICS =====================
+function renderOutreachAnalytics() {
+  const v2 = document.getElementById('v2Content');
+  if (!v2) return;
+
+  const today = todayStr();
+  const todayLog = outreach_logs.find(l => l.date === today) || { messages_sent: 0, replies_received: 0, calls_booked: 0 };
+  
+  // 7-day reply rate
+  let sumSent = 0, sumReplies = 0;
+  const d = new Date();
+  d.setDate(d.getDate() - 7);
+  const sevenDaysAgo = d.toISOString().split('T')[0];
+  const last7Logs = outreach_logs.filter(l => l.date >= sevenDaysAgo);
+  last7Logs.forEach(l => {
+    sumSent += (l.messages_sent || 0);
+    sumReplies += (l.replies_received || 0);
+  });
+  const replyRate = sumSent > 0 ? Math.round((sumReplies / sumSent) * 100) : 0;
+
+  // Calls booked this week
+  const dMon = new Date(); dMon.setDate(dMon.getDate() - (dMon.getDay() || 7) + 1);
+  const thisMonday = dMon.toISOString().split('T')[0];
+  const thisWeekLogs = outreach_logs.filter(l => l.date >= thisMonday);
+  const callsBooked = thisWeekLogs.reduce((sum, l) => sum + (l.calls_booked || 0), 0);
+
+  // Active warm leads
+  const warmLeads = prospects.filter(p => p.status === 'replied' || p.status === 'discovery' || p.status === 'demo').length;
+
+  let html = `
+    <div style="margin-bottom:24px;">
+      ${sectionLabel('Outreach Overview')}
+      <div class="metric-cards-row">
+        ${metricCard('Sent Today', todayLog.messages_sent, '')}
+        ${metricCard('Reply Rate (7d)', replyRate + '%', replyRate > 10 ? 'green' : '')}
+        ${metricCard('Calls This Week', callsBooked, callsBooked > 0 ? 'amber' : '')}
+        ${metricCard('Warm Leads', warmLeads, 'blue')}
+      </div>
+    </div>
+    
+    <div style="margin-bottom:32px;">
+      ${sectionLabel('Activity (Last 30 Days)')}
+      <div class="v2-card" style="padding:16px;">
+        <canvas id="outreachChart" style="width:100%; height:200px;"></canvas>
+      </div>
+    </div>
+    
+    <div style="margin-bottom:32px;">
+      ${sectionLabel('Pipeline Funnel')}
+      <div class="v2-card" style="padding:20px;">
+        ${renderFunnel()}
+      </div>
+    </div>
+  `;
+  v2.innerHTML = html;
+  
+  // Render Chart
+  setTimeout(renderOutreachChart, 50);
+}
+
+function renderFunnel() {
+  const total = prospects.length;
+  if (total === 0) return '<div style="color:var(--text-dim); font-size:13px;">No prospects in pipeline.</div>';
+  
+  const warm = prospects.filter(p => !['new', 'lost'].includes(p.status)).length;
+  const calls = prospects.filter(p => ['discovery', 'demo', 'pilot', 'won'].includes(p.status)).length;
+  const pilots = prospects.filter(p => ['pilot', 'won'].includes(p.status)).length;
+  
+  const wPct = Math.round((warm/total)*100) || 0;
+  const cPct = Math.round((calls/total)*100) || 0;
+  const pPct = Math.round((pilots/total)*100) || 0;
+  
+  return `
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <div style="display:flex; align-items:center;">
+        <div style="width:100px; font-size:12px; color:var(--text-muted); font-weight:600;">Prospects</div>
+        <div style="flex:1; height:24px; background:rgba(255,255,255,0.05); border-radius:4px; overflow:hidden;">
+          <div style="height:100%; width:100%; background:var(--bg-tertiary); display:flex; align-items:center; padding-left:8px; font-size:11px; font-weight:700;">${total}</div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center;">
+        <div style="width:100px; font-size:12px; color:var(--text-muted); font-weight:600;">Warm</div>
+        <div style="flex:1; height:24px; background:rgba(255,255,255,0.05); border-radius:4px; overflow:hidden;">
+          <div style="height:100%; width:${wPct}%; background:var(--blue-400); display:flex; align-items:center; padding-left:8px; font-size:11px; font-weight:700; color:#fff;">${warm} (${wPct}%)</div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center;">
+        <div style="width:100px; font-size:12px; color:var(--text-muted); font-weight:600;">Calls Booked</div>
+        <div style="flex:1; height:24px; background:rgba(255,255,255,0.05); border-radius:4px; overflow:hidden;">
+          <div style="height:100%; width:${cPct}%; background:var(--amber-400); display:flex; align-items:center; padding-left:8px; font-size:11px; font-weight:700; color:#000;">${calls} (${cPct}%)</div>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center;">
+        <div style="width:100px; font-size:12px; color:var(--text-muted); font-weight:600;">Pilots</div>
+        <div style="flex:1; height:24px; background:rgba(255,255,255,0.05); border-radius:4px; overflow:hidden;">
+          <div style="height:100%; width:${pPct}%; background:var(--green-400); display:flex; align-items:center; padding-left:8px; font-size:11px; font-weight:700; color:#000;">${pilots} (${pPct}%)</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+let outreachChartInstance = null;
+function renderOutreachChart() {
+  const ctx = document.getElementById('outreachChart');
+  if (!ctx || typeof Chart === 'undefined') return;
+  if (outreachChartInstance) outreachChartInstance.destroy();
+  
+  const labels = [];
+  const sentData = [];
+  const replyData = [];
+  
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split('T')[0];
+    labels.push(d.getDate() + '/' + (d.getMonth()+1));
+    
+    const log = outreach_logs.find(l => l.date === dateStr);
+    sentData.push(log ? log.messages_sent || 0 : 0);
+    replyData.push(log ? log.replies_received || 0 : 0);
+  }
+
+  outreachChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        { label: 'Sent', data: sentData, backgroundColor: '#534AB7', borderRadius: 4 },
+        { label: 'Replies', data: replyData, backgroundColor: '#34d399', borderRadius: 4 }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#888' } },
+        y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#888' }, beginAtZero: true }
+      },
+      plugins: {
+        legend: { labels: { color: '#aaa' } }
+      }
+    }
+  });
+}
+
 function renderVelocity() {
   const v2 = document.getElementById('v2Content');
   if (!v2) return;
@@ -3927,6 +4553,244 @@ function renderWorkload() {
 }
 
 // ===================== V2 DECISIONS SCREEN =====================
+// ===================== PHASE 3.3 RUNWAY =====================
+function renderRunway() {
+  const v2 = document.getElementById('v2Content');
+  if (!v2) return;
+
+  const bankBalanceStr = localStorage.getItem('BANK_BALANCE') || '0';
+  let bankBalance = parseFloat(bankBalanceStr) || 0;
+
+  let burnRate = 0;
+  // Calculate average monthly burn from expenses in the last 30 days
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const thirtyDaysStr = thirtyDaysAgo.toISOString().split('T')[0];
+
+  const recentExpenses = expenses.filter(e => e.date >= thirtyDaysStr);
+  burnRate = recentExpenses.reduce((sum, e) => sum + (parseFloat(e.amount_usd) || 0), 0);
+
+  // Runway in months
+  const runwayMonths = burnRate > 0 ? (bankBalance / burnRate).toFixed(1) : '∞';
+
+  let html = `
+    <div style="margin-bottom:24px;">
+      ${sectionLabel('Financial Runway')}
+      <div class="metric-cards-row">
+        ${metricCard('Cash on Hand', '$' + bankBalance.toLocaleString(), '')}
+        ${metricCard('30-Day Burn', '$' + burnRate.toLocaleString(), burnRate > 5000 ? 'red' : 'amber')}
+        ${metricCard('Runway', runwayMonths + ' mos', runwayMonths !== '∞' && runwayMonths < 3 ? 'red' : 'green')}
+      </div>
+      <button onclick="setBankBalance()" class="v2-button-secondary" style="margin-top:12px;">Update Cash on Hand</button>
+    </div>
+    
+    <div style="margin-bottom:24px; display:flex; justify-content:space-between; align-items:center;">
+      ${sectionLabel('Recent Expenses')}
+      <button onclick="addExpenseUI()" class="v2-button-teal" style="padding:6px 12px; font-size:12px;">+ Add Expense</button>
+    </div>
+  `;
+
+  if (expenses.length === 0) {
+    html += `<div style="padding:20px; text-align:center; color:var(--text-dim); font-size:13px; background:rgba(255,255,255,0.02); border-radius:8px;">No expenses recorded yet.</div>`;
+  } else {
+    expenses.slice(0, 50).forEach(e => {
+      html += `
+        <div class="v2-card" style="padding:16px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <div style="font-weight:600; font-size:14px; margin-bottom:4px;">${esc(e.description)}</div>
+            <div style="font-size:11px; color:var(--text-muted);">
+              ${e.date} &bull; <span style="color:var(--amber-400);">${esc(e.category)}</span>
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-weight:700; color:var(--red-400); font-size:15px;">-$${parseFloat(e.amount_usd).toLocaleString()}</div>
+            <button onclick="removeExpense('${e.id}')" style="background:transparent; border:none; color:var(--text-muted); cursor:pointer; font-size:11px; margin-top:4px;">Delete</button>
+          </div>
+        </div>
+      `;
+    });
+  }
+
+  v2.innerHTML = html;
+}
+
+function setBankBalance() {
+  const current = localStorage.getItem('BANK_BALANCE') || '0';
+  const val = prompt('Enter Total Cash on Hand (USD):', current);
+  if (val !== null) {
+    localStorage.setItem('BANK_BALANCE', parseFloat(val) || 0);
+    renderRunway();
+  }
+}
+
+async function addExpenseUI() {
+  const desc = prompt('Expense description:');
+  if (!desc) return;
+  const amt = prompt('Amount (USD):');
+  if (!amt) return;
+  const cat = prompt('Category (e.g. Software, Payroll, Setup):', 'Software');
+  
+  const idValue = uid();
+  const e = {
+    id: idValue,
+    date: todayStr(),
+    description: desc,
+    amount_usd: parseFloat(amt) || 0,
+    amount_inr: 0,
+    category: cat || 'General',
+    user_id: user ? user.id : null
+  };
+  
+  expenses.unshift(e);
+  renderRunway();
+  
+  if (sb) {
+    const { error } = await sb.from('expenses').insert([e]);
+    if (error) queueChange('expenses', 'insert', e);
+  }
+}
+
+async function removeExpense(id) {
+  if (!confirm('Delete this expense?')) return;
+  expenses = expenses.filter(x => x.id !== id);
+  renderRunway();
+  
+  if (sb) {
+    const { error } = await sb.from('expenses').delete().eq('id', id);
+    if (error) queueChange('expenses', 'delete', { id });
+  }
+}
+
+// ===================== PHASE 3.2 MILESTONES =====================
+async function seedDefaultMilestones() {
+  if (milestones.length > 0) return;
+  const defaults = [
+    { title: 'First 10 Pilots', target_value: 10, unit: 'pilots', category: 'Growth', target_date: '2026-06-30' },
+    { title: '$10k MRR', target_value: 10000, unit: 'USD', category: 'Revenue', target_date: '2026-12-31' },
+    { title: 'Product Hunt Launch', target_value: 100, unit: '%', category: 'Product', target_date: '2026-05-15' },
+    { title: 'YC Application', target_value: 100, unit: '%', category: 'Fundraising', target_date: '2026-09-01' }
+  ];
+  for (let m of defaults) {
+    const rec = { id: uid(), user_id: user.id, ...m, current_value: 0 };
+    milestones.push(rec);
+    if (sb) await sb.from('milestones').insert([rec]);
+  }
+  renderMilestones();
+}
+
+async function updateMilestoneProgress(id) {
+  const m = milestones.find(x => x.id === id);
+  if (!m) return;
+  const val = prompt(`Enter current value for ${m.title} (Target: ${m.target_value} ${m.unit})`, m.current_value);
+  if (val === null) return;
+  m.current_value = parseFloat(val) || 0;
+  if (m.current_value >= m.target_value && !m.achieved_date) m.achieved_date = todayStr();
+  renderMilestones();
+  if (sb) {
+    const { error } = await sb.from('milestones').update({ current_value: m.current_value, achieved_date: m.achieved_date }).eq('id', id);
+    if (error) queueChange('milestones', 'update', { id, current_value: m.current_value, achieved_date: m.achieved_date });
+  }
+}
+
+async function achieveMilestone(id) {
+  const m = milestones.find(x => x.id === id);
+  if (!m) return;
+  m.achieved_date = todayStr();
+  if (m.current_value < m.target_value) m.current_value = m.target_value;
+  renderMilestones();
+  if (sb) {
+    const { error } = await sb.from('milestones').update({ achieved_date: m.achieved_date, current_value: m.current_value }).eq('id', id);
+    if (error) queueChange('milestones', 'update', { id, achieved_date: m.achieved_date, current_value: m.current_value });
+  }
+}
+
+function renderMilestones() {
+  const v2 = document.getElementById('v2Content');
+  if (!v2) return;
+
+  if (milestones.length === 0) {
+    v2.innerHTML = `
+      <div class="v2-empty" style="padding:60px 20px; text-align:center;">
+        <div style="font-size:32px; margin-bottom:12px;">🏔️</div>
+        <div style="font-weight:700;">No Milestones tracked</div>
+        <div style="font-size:13px; color:var(--text-dim); margin-bottom:20px;">Track your major company goals.</div>
+        <button onclick="seedDefaultMilestones()" class="v2-button-teal" style="padding:10px 20px;">Seed Default Milestones</button>
+      </div>
+    `;
+    return;
+  }
+
+  const active = milestones.filter(m => !m.achieved_date).sort((a,b) => a.target_date.localeCompare(b.target_date));
+  const achieved = milestones.filter(m => m.achieved_date).sort((a,b) => b.achieved_date.localeCompare(a.achieved_date));
+
+  const nextUp = active.length > 0 ? active[0] : null;
+
+  let html = '';
+  
+  if (nextUp) {
+    const pct = Math.min(100, Math.round((nextUp.current_value / nextUp.target_value) * 100)) || 0;
+    html += `
+      ${sectionLabel('Next Major Milestone')}
+      <div class="v2-card accent-left" style="padding:20px; margin-bottom:32px; border-left-color:var(--amber-400);">
+        <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+          <span style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">${nextUp.category}</span>
+          <span style="font-size:11px; font-weight:700; color:var(--amber-400);">Target: ${nextUp.target_date}</span>
+        </div>
+        <div style="font-size:20px; font-weight:800; margin-bottom:16px;">${esc(nextUp.title)}</div>
+        <div style="height:6px; background:rgba(255,255,255,0.05); border-radius:10px; overflow:hidden; margin-bottom:8px;">
+          <div style="width:${pct}%; height:100%; background:var(--amber-400); box-shadow:0 0 10px rgba(251,191,36,0.2);"></div>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px;">
+          <span style="font-weight:600; color:var(--amber-400);">${pct}% (${nextUp.current_value} / ${nextUp.target_value} ${nextUp.unit})</span>
+          <div style="display:flex; gap:8px;">
+            <button onclick="updateMilestoneProgress('${nextUp.id}')" style="background:transparent; border:1px solid rgba(255,255,255,0.1); color:var(--text); padding:4px 8px; border-radius:4px; cursor:pointer;">Update</button>
+            <button onclick="achieveMilestone('${nextUp.id}')" style="background:var(--green-400); color:#000; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-weight:700;">Achieve</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  if (active.length > 1) {
+    html += sectionLabel('Active Milestones');
+    active.slice(1).forEach(m => {
+      const pct = Math.min(100, Math.round((m.current_value / m.target_value) * 100)) || 0;
+      html += `
+        <div class="v2-card" style="padding:16px; margin-bottom:12px;">
+          <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+            <span style="font-size:12px; font-weight:600;">${m.title}</span>
+            <span style="font-size:11px; color:var(--text-muted);">${m.target_date}</span>
+          </div>
+          <div style="height:4px; background:rgba(255,255,255,0.05); border-radius:10px; overflow:hidden; margin-bottom:8px;">
+            <div style="width:${pct}%; height:100%; background:var(--accent);"></div>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px;">
+            <span style="color:var(--text-muted);">${m.current_value} / ${m.target_value} ${m.unit}</span>
+            <button onclick="updateMilestoneProgress('${m.id}')" style="background:transparent; border:none; color:var(--teal-400); cursor:pointer;">Update</button>
+          </div>
+        </div>
+      `;
+    });
+  }
+
+  if (achieved.length > 0) {
+    html += sectionLabel(`Achieved (${achieved.length})`);
+    achieved.forEach(m => {
+      html += `
+        <div class="v2-card" style="padding:12px 16px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; opacity:0.6;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="color:var(--green-400);">✓</span>
+            <span style="font-weight:600; font-size:13px; text-decoration:line-through;">${m.title}</span>
+          </div>
+          <span style="font-size:11px; color:var(--text-muted);">${m.achieved_date}</span>
+        </div>
+      `;
+    });
+  }
+
+  v2.innerHTML = html;
+}
+
 function renderDecisionsV2() {
   const v2 = document.getElementById('v2Content');
   if (!v2) return;
@@ -4134,6 +4998,69 @@ function saveDelegation() {
 }
 
 // ===================== V2 REVIEW SCREEN =====================
+function generateWeeklySummaryHtml() {
+  const dMon = new Date(); dMon.setDate(dMon.getDate() - (dMon.getDay() || 7) + 1);
+  const thisMonday = dMon.toISOString().split('T')[0];
+
+  let weeklyCompletedCount = 0;
+  let topHighlights = [];
+
+  const thisWeekLogs = dailyLog.filter(l => l.date >= thisMonday);
+  thisWeekLogs.forEach(l => {
+    if (l.review && l.review.well) {
+      topHighlights.push(l.review.well);
+    }
+    // Attempt to parse completed_tasks from JSON
+    if (l.completed_tasks) {
+      try {
+        const parsed = typeof l.completed_tasks === 'string' ? JSON.parse(l.completed_tasks) : l.completed_tasks;
+        if (Array.isArray(parsed)) {
+          weeklyCompletedCount += parsed.length;
+        }
+      } catch (e) {}
+    }
+  });
+  
+  // If daily logs are sparse, fallback to tasks done count from 'cat === this-week' or generally 'done'
+  if (weeklyCompletedCount === 0) {
+    weeklyCompletedCount = tasks.filter(t => t.done && t.cat === 'this-week').length || tasks.filter(t => t.done).length;
+  }
+  
+  const weekOutreach = outreach_logs.filter(l => l.date >= thisMonday);
+  const totalSent = weekOutreach.reduce((sum, l) => sum + (l.messages_sent || 0), 0);
+  const totalBooked = weekOutreach.reduce((sum, l) => sum + (l.calls_booked || 0), 0);
+
+  return `
+    <div style="background:var(--bg-tertiary); border:1px solid rgba(255,255,255,0.05); border-radius:12px; padding:20px; margin-bottom:24px;">
+      <h3 style="font-size:16px; margin:0 0 16px; display:flex; align-items:center; gap:8px;">
+        📅 This Week's Auto-Pull Summary
+      </h3>
+      <div style="display:flex; gap:16px; margin-bottom:16px;">
+        <div style="flex:1; background:rgba(255,255,255,0.02); padding:12px; border-radius:8px;">
+          <div style="font-size:24px; font-weight:800; color:var(--text);">${weeklyCompletedCount}</div>
+          <div style="font-size:11px; color:var(--text-muted);">Tasks Done</div>
+        </div>
+        <div style="flex:1; background:rgba(255,255,255,0.02); padding:12px; border-radius:8px;">
+          <div style="font-size:24px; font-weight:800; color:var(--accent);">${totalSent}</div>
+          <div style="font-size:11px; color:var(--text-muted);">Outreach Sent</div>
+        </div>
+        <div style="flex:1; background:rgba(255,255,255,0.02); padding:12px; border-radius:8px;">
+          <div style="font-size:24px; font-weight:800; color:var(--amber-400);">${totalBooked}</div>
+          <div style="font-size:11px; color:var(--text-muted);">Calls Booked</div>
+        </div>
+      </div>
+      ${topHighlights.length > 0 ? `
+      <div>
+        <div style="font-size:12px; font-weight:700; color:var(--text-muted); margin-bottom:8px;">Highlights from Daily Reviews</div>
+        <ul style="margin:0; padding-left:16px; font-size:13px; color:var(--text-dim);">
+          ${topHighlights.slice(0, 3).map(t => `<li style="margin-bottom:4px;">${esc(t)}</li>`).join('')}
+        </ul>
+      </div>
+      ` : ''}
+    </div>
+  `;
+}
+
 function renderReviewV2() {
   const v2 = document.getElementById('v2Content');
   if (!v2) return;
@@ -4149,9 +5076,11 @@ function renderReviewV2() {
 
   let html = `<div style="padding:0 16px 100px;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-      <h2 style="font-size:20px; font-weight:800; margin:0;">Daily Reviews</h2>
+      <h2 style="font-size:20px; font-weight:800; margin:0;">Reviews & Momentum</h2>
       ${!hasReview ? `<button style="background:var(--accent); color:#fff; border:none; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:700; cursor:pointer;" onclick="openReviewModal()">Write Review</button>` : ''}
     </div>
+
+    ${generateWeeklySummaryHtml()}
 
     <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:20px;">
       <div style="background:var(--bg-secondary); border-radius:12px; padding:14px; text-align:center; border:1px solid var(--border);">
@@ -4583,8 +5512,25 @@ function openAddModal() {
   document.getElementById('taskInput').value = '';
   document.getElementById('categoryInput').value = (activeTab === 'done' || activeTab === 'history' || activeTab === 'sync' || activeTab === 'playbook') ? 'today' : activeTab;
   document.getElementById('priorityInput').value = 'medium';
+  document.getElementById('statusInput').value = 'not-started';
+  document.getElementById('domainInput').value = 'General';
+  document.getElementById('phaseInput').value = '';
+  document.getElementById('ownerInput').value = 'Ladson';
+  document.getElementById('dueDateInput').value = '';
   document.getElementById('notesInput').value = '';
   document.getElementById('reminderInput').value = '';
+
+  const currentOkr = JSON.parse(localStorage.getItem(OKR_KEY) || 'null');
+  const okrSel = document.getElementById('okrInput');
+  if (okrSel) {
+    okrSel.innerHTML = '<option value="">None</option>';
+    if (currentOkr) {
+      if (currentOkr.one) okrSel.innerHTML += `<option value="${esc(currentOkr.one)}">${esc(currentOkr.one)}</option>`;
+      if (currentOkr.bonus1) okrSel.innerHTML += `<option value="${esc(currentOkr.bonus1)}">${esc(currentOkr.bonus1)}</option>`;
+      if (currentOkr.bonus2) okrSel.innerHTML += `<option value="${esc(currentOkr.bonus2)}">${esc(currentOkr.bonus2)}</option>`;
+    }
+    okrSel.value = '';
+  }
   document.getElementById('modalActions').innerHTML = `
     <button class="btn-cancel" onclick="closeModal()">Cancel</button>
     <button class="btn-save" onclick="saveTask()">${isReminder ? 'Set Reminder' : 'Add Task'}</button>`;
@@ -4601,8 +5547,33 @@ function editTask(e, id) {
   document.getElementById('taskInput').value = t.text;
   document.getElementById('categoryInput').value = t.cat;
   document.getElementById('priorityInput').value = t.priority;
+  document.getElementById('statusInput').value = t.status || 'not-started';
+  document.getElementById('domainInput').value = t.domain || 'General';
+  document.getElementById('phaseInput').value = t.phase || '';
+  document.getElementById('ownerInput').value = t.owner || 'Ladson';
+  document.getElementById('dueDateInput').value = t.dueDate || '';
   document.getElementById('notesInput').value = t.notes || '';
   document.getElementById('reminderInput').value = t.reminderTime || '';
+
+  const currentOkr = JSON.parse(localStorage.getItem(OKR_KEY) || 'null');
+  const okrSel = document.getElementById('okrInput');
+  if (okrSel) {
+    okrSel.innerHTML = '<option value="">None</option>';
+    if (currentOkr) {
+      if (currentOkr.one) okrSel.innerHTML += `<option value="${esc(currentOkr.one)}">${esc(currentOkr.one)}</option>`;
+      if (currentOkr.bonus1) okrSel.innerHTML += `<option value="${esc(currentOkr.bonus1)}">${esc(currentOkr.bonus1)}</option>`;
+      if (currentOkr.bonus2) okrSel.innerHTML += `<option value="${esc(currentOkr.bonus2)}">${esc(currentOkr.bonus2)}</option>`;
+    }
+    // Also include the task's okrId if it's historical and not in current OKR set
+    if (t.okrId && !Array.from(okrSel.options).some(o => o.value === t.okrId)) {
+      okrSel.innerHTML += `<option value="${esc(t.okrId)}">${esc(t.okrId)}</option>`;
+    }
+    okrSel.value = t.okrId || '';
+  }
+
+  // Dependencies
+  modalDependencies = [...(t.dependencies || [])];
+  renderModalDeps();
   document.getElementById('modalActions').innerHTML = `
     <button class="btn-delete" onclick="deleteTask('${id}')">Delete</button>
     <button class="btn-cancel" onclick="closeModal()">Cancel</button>
@@ -4612,30 +5583,68 @@ function editTask(e, id) {
 
 function closeModal() { document.getElementById('modal').classList.remove('open'); editingId = null; }
 
+function openQuickCaptureModal() {
+  document.getElementById('quickCaptureModal').classList.add('open');
+  setTimeout(() => document.getElementById('quickCaptureInput').focus(), 50);
+}
+
+function closeQuickCaptureModal() {
+  document.getElementById('quickCaptureModal').classList.remove('open');
+  document.getElementById('quickCaptureInput').value = '';
+}
+
+function saveQuickCapture() {
+  const text = document.getElementById('quickCaptureInput').value.trim();
+  if (!text) return;
+  const t = {
+    id: uid(), text, cat: 'inbox', priority: 'medium', done: false,
+    notes: '', daily: false, subtasks: [], streak: 0, lastStreakDate: null, reminderTime: null,
+    domain: 'General', dueDate: null, status: 'not-started', phase: null, owner: 'Ladson', dependencies: [], okrId: null,
+    updatedAt: new Date().toISOString()
+  };
+  tasks.push(t);
+  pushTaskToSupabase(t);
+  save(); closeQuickCaptureModal(); renderTopTabs(); renderScreen(); updateProgress();
+}
+
 function saveTask() {
   const text = document.getElementById('taskInput').value.trim();
   if (!text) return;
   const cat = document.getElementById('categoryInput').value;
   const priority = document.getElementById('priorityInput').value;
   const notes = document.getElementById('notesInput').value.trim();
-
   const reminderTime = document.getElementById('reminderInput').value || null;
+
+  const status = document.getElementById('statusInput').value || 'not-started';
+  const domain = document.getElementById('domainInput').value || 'General';
+  const phase = document.getElementById('phaseInput').value || '';
+  const owner = document.getElementById('ownerInput').value || 'Ladson';
+  const dueDate = document.getElementById('dueDateInput').value || null;
+  const okrInputEle = document.getElementById('okrInput');
+  const okrId = okrInputEle ? (okrInputEle.value || null) : null;
 
   if (editingId) {
     const t = tasks.find(x => x.id === editingId);
     if (t) {
       t.text = text; t.cat = cat; t.priority = priority; t.notes = notes;
       t.reminderTime = reminderTime;
+      t.status = status; t.domain = domain; t.phase = phase; t.owner = owner; t.dueDate = dueDate;
+      t.okrId = okrId;
+      t.dependencies = [...modalDependencies];
+      t.done = (status === 'done');
+      if (t.done && !t.completedAt) t.completedAt = new Date().toISOString();
       t.daily = (cat === 'today' || cat === 'daily-habits');
       t.updatedAt = new Date().toISOString();
       pushTaskToSupabase(t);
     }
   } else {
     const newTask = {
-      id: uid(), text, cat, priority, done: false, notes, daily: (cat === 'today' || cat === 'daily-habits'),
+      id: uid(), text, cat, priority, done: (status === 'done'), notes, daily: (cat === 'today' || cat === 'daily-habits'),
       subtasks: [], streak: 0, lastStreakDate: null, reminderTime,
+      domain, dueDate, status, phase, owner, dependencies: [...modalDependencies], okrId,
       updatedAt: new Date().toISOString()
     };
+    if (newTask.done) newTask.completedAt = new Date().toISOString();
     tasks.push(newTask);
     pushTaskToSupabase(newTask);
   }
@@ -4655,6 +5664,46 @@ function deleteTask(id) {
     deleteTaskFromSupabase(id);
     save(); closeModal(); renderTopTabs(); renderScreen(); updateProgress();
   }
+}
+
+// ===================== MODAL DEPENDENCIES =====================
+function renderModalDeps() {
+  const listEl = document.getElementById('modalDepsList');
+  const selEl = document.getElementById('modalDepSel');
+  if (!listEl || !selEl) return;
+
+  // Render current list
+  listEl.innerHTML = '';
+  modalDependencies.forEach(depId => {
+    const dt = tasks.find(x => x.id === depId);
+    if (dt) {
+      listEl.innerHTML += `
+        <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.05); padding:8px 12px; margin-bottom:6px; border-radius:8px; border:1px solid var(--border);">
+          <span style="font-size:13px; color:var(--text);">${esc(dt.text.substring(0, 50))}</span>
+          <button style="background:none; border:none; color:var(--red); cursor:pointer; font-size:18px; padding:0 4px;" onclick="removeModalDep('${depId}')">&times;</button>
+        </div>`;
+    }
+  });
+
+  // Update picker options
+  selEl.innerHTML = '<option value="">Add dependency...</option>';
+  const possible = tasks.filter(x => !modalDependencies.includes(x.id) && (editingId ? x.id !== editingId : true) && !x.done);
+  possible.forEach(x => {
+    selEl.innerHTML += `<option value="${x.id}">${esc(x.text.substring(0, 40))}</option>`;
+  });
+}
+
+function addModalDep() {
+  const sel = document.getElementById('modalDepSel');
+  if (sel && sel.value) {
+    modalDependencies.push(sel.value);
+    renderModalDeps();
+  }
+}
+
+function removeModalDep(id) {
+  modalDependencies = modalDependencies.filter(x => x !== id);
+  renderModalDeps();
 }
 
 document.getElementById('modal').addEventListener('click', function (e) { if (e.target === this) closeModal(); });
@@ -4726,6 +5775,41 @@ function openTaskDetail(id) {
     html += v2Card(subHtml);
   }
 
+  // Dependencies
+  const deps = t.dependencies || [];
+  let depHtml = '<div style="font-size:11px;color:var(--text-dim);margin-bottom:12px;text-transform:uppercase;letter-spacing:0.5px;">Depends On</div>';
+  
+  if (deps.length > 0) {
+    depHtml += '<div style="margin-bottom:12px;">';
+    deps.forEach(depId => {
+      const dt = tasks.find(x => x.id === depId);
+      if (dt) {
+        depHtml += `
+          <div style="display:flex; justify-content:space-between; align-items:center; background:var(--bg); padding:8px 12px; margin-bottom:6px; border-radius:6px; border:1px solid var(--border);">
+            <div style="display:flex; align-items:center; gap:8px;">
+              ${statusDot(dt.done ? 'green' : (dt.status === 'blocked' ? 'red' : 'yellow'))}
+              <span style="font-size:14px; text-decoration:${dt.done ? 'line-through' : 'none'}; color:${dt.done ? 'var(--text-light)' : 'var(--text)'};">${esc(dt.text)}</span>
+            </div>
+            <button style="background:none; border:none; color:var(--red); cursor:pointer; font-size:16px;" onclick="removeDependency('${t.id}', '${depId}')">&times;</button>
+          </div>
+        `;
+      }
+    });
+    depHtml += '</div>';
+  }
+  
+  const possibleDeps = tasks.filter(x => x.id !== t.id && !deps.includes(x.id) && !x.done);
+  depHtml += `
+    <div style="display:flex; gap:8px;">
+      <select id="newDepSel-${t.id}" style="flex:1; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:13px;">
+        <option value="">Add a dependency...</option>
+        ${possibleDeps.map(x => `<option value="${x.id}">${esc(x.text.substring(0, 40))}${x.text.length>40?'...':''}</option>`).join('')}
+      </select>
+      <button onclick="addDependency('${t.id}')" style="background:var(--accent);color:white;border:none;border-radius:6px;padding:8px 12px;cursor:pointer;font-weight:600;font-size:13px;">Add</button>
+    </div>
+  `;
+  html += v2Card(depHtml);
+
   // Streak/Reminder section
   if (t.daily || t.reminderTime) {
     let extraHtml = '';
@@ -4770,6 +5854,43 @@ function openTaskDetail(id) {
 
 function closeTaskDetail() {
   document.getElementById('detailOverlay').classList.remove('open');
+}
+
+// ===================== DEPENDENCIES =====================
+function addDependency(taskId) {
+  const sel = document.getElementById(`newDepSel-${taskId}`);
+  if (!sel || !sel.value) return;
+  const t = tasks.find(x => x.id === taskId);
+  if (t) {
+    if (!t.dependencies) t.dependencies = [];
+    t.dependencies.push(sel.value);
+    t.updatedAt = new Date().toISOString();
+    pushTaskToSupabase(t);
+    save();
+    openTaskDetail(taskId);
+    renderScreen();
+  }
+}
+
+function removeDependency(taskId, depId) {
+  const t = tasks.find(x => x.id === taskId);
+  if (t && t.dependencies) {
+    t.dependencies = t.dependencies.filter(id => id !== depId);
+    t.updatedAt = new Date().toISOString();
+    pushTaskToSupabase(t);
+    save();
+    openTaskDetail(taskId);
+    renderScreen();
+  }
+}
+
+function checkDependencyStatus(task) {
+  if (!task.dependencies || task.dependencies.length === 0) return true;
+  for (let depId of task.dependencies) {
+    const dt = tasks.find(x => x.id === depId);
+    if (dt && !dt.done) return false;
+  }
+  return true;
 }
 
 function deleteFromDetail(id) {
@@ -5095,10 +6216,29 @@ function checkReminders() {
   const todayTasks = tasks.filter(t => (t.cat === 'today' || t.cat === 'daily-habits' || t.cat === 'reminders') && !t.done && t.reminderTime);
   for (const t of todayTasks) {
     if (t.reminderTime === currentTime) {
+      // Phase 5.1: If app is backgrounded and high priority, send email fallback
+      if (document.visibilityState !== 'visible' && t.priority === 'high') {
+         sendEmailReminder(t.text, t.reminderTime);
+      }
+      
       showNotification('Task Reminder', t.text);
       if (!firedAny) { playReminderSound(); firedAny = true; incrementNotifCount(); }
       lastFiredMinute = currentTime;
     }
+  }
+}
+
+async function sendEmailReminder(text, time) {
+  const user_email = localStorage.getItem('EMAIL_FALLBACK');
+  if (!user_email || !sb) return;
+  
+  try {
+    const { data, error } = await sb.functions.invoke('send-reminder-email', {
+      body: { task_text: text, reminder_time: time, user_email: user_email }
+    });
+    if (error) console.log('Email fallback failed:', error);
+  } catch (e) {
+    console.log('Email fallback error:', e);
   }
 }
 
@@ -5390,7 +6530,12 @@ function renderSync() {
       </div>
       <h3>Account</h3>
       <p>Signed-in as <strong>${esc(currentUser.email)}</strong></p>
-      <button class="sync-btn tertiary" onclick="signOut()">Sign Out</button>
+      <div id="tokenExpiry" style="font-size:11px; color:var(--text-muted); margin-bottom:12px;">Token valid</div>
+      <div style="display:flex; gap:8px;">
+        <button class="sync-btn secondary" onclick="refreshAndCopyToken()" style="flex:1">Refresh & Copy Token</button>
+        <button class="sync-btn tertiary" onclick="signOut()" style="flex:1">Sign Out</button>
+      </div>
+      <div id="tokenRefreshStatus" class="sync-status">Token copied to clipboard!</div>
     </div>`;
   } else {
     html += `
@@ -5409,12 +6554,12 @@ function renderSync() {
     <div class="sync-card">
       <div class="sync-stats">
         <div class="sync-stat">
-          <div class="sync-stat-label">Last Sync</div>
+          <div class="sync-stat-label">Last Cloud Sync</div>
           <div class="sync-stat-value">${lastSync}</div>
         </div>
         <div class="sync-stat">
-          <div class="sync-stat-label">Local Version</div>
-          <div class="sync-stat-value">v2.1.0</div>
+          <div class="sync-stat-label">Auto-Sync (TASKS.md)</div>
+          <div class="sync-stat-value">${lastAutoSync ? lastAutoSync : 'Never'}</div>
         </div>
       </div>
     </div>
@@ -5440,7 +6585,15 @@ function renderSync() {
     </div>`;
 
   if ('Notification' in window && Notification.permission === 'granted') {
+    const emailFallback = localStorage.getItem('EMAIL_FALLBACK') || '';
     html += `
+    <div class="sync-card">
+      <h3>Priority Email Fallback</h3>
+      <p style="margin-bottom:12px; font-size: 11px; color: var(--text-muted)">Send email for P0 reminders when app is in background.</p>
+      <input type="email" id="emailFallbackInput" placeholder="Enter your email" value="${esc(emailFallback)}" 
+        style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:13px; margin-bottom:8px;">
+      <button class="sync-btn tertiary" onclick="saveEmailFallback()">Save Email Setting</button>
+    </div>
     <div class="sync-card">
       <h3>Active Task Reminders</h3>
       <p style="margin-bottom:12px; font-size: 13px; color: var(--text-muted)">You can set custom reminder times for any task by using the <strong>Remind me at</strong> input when creating or editing a task. Perfect for scheduling specific meetings or time blocks.</p>
@@ -5497,7 +6650,7 @@ function renderSync() {
     html += `
     <div class="sync-card workspace-card connected">
       <h3>✅ Workspace Connected</h3>
-      <p>Auto-syncing with <strong>${esc(workspaceDirHandle.name)}</strong> every 5 mins. New tasks added there will appear here.</p>
+      <p>Auto-syncing with <strong>${esc(workspaceDirHandle.name)}</strong> every 30s. New tasks added there will appear here.</p>
       <button class="sync-btn secondary" onclick="manualSyncFromWorkspace()">Sync Now</button>
       <div id="workspaceStatus" class="sync-status" style="margin-top:12px;"></div>
     </div>`;
@@ -5505,7 +6658,7 @@ function renderSync() {
     html += `
     <div class="sync-card workspace-card">
       <h3>Workspace Folder Auto-Sync</h3>
-      <p>Connect your local Malveon folder on your desktop. The app will auto-import any new tasks added to TASKS.md every 5 mins.</p>
+      <p>Connect your local Malveon folder on your desktop. The app will auto-import any new tasks added to TASKS.md every 30s.</p>
       <button class="sync-btn primary" onclick="connectWorkspaceFolder()">Connect Folder</button>
       <div id="workspaceStatus" class="sync-status" style="margin-top:12px;"></div>
     </div>`;
@@ -5770,6 +6923,70 @@ async function connectWorkspaceFolder() {
   }
 }
 
+async function importProspectsFromStagingFile() {
+  if (!workspaceDirHandle) {
+    alert('Please connect workspace folder first in Sync tab.');
+    return;
+  }
+  try {
+    const fileHandle = await workspaceDirHandle.getFileHandle('outreach/trackers/daily-staging.md');
+    const file = await fileHandle.getFile();
+    const content = await file.text();
+    
+    // Parse ## 5 New ICP Prospects table
+    const sectionStart = content.indexOf('## 5 New ICP Prospects');
+    if (sectionStart === -1) {
+      alert('Could not find "## 5 New ICP Prospects" section in daily-staging.md');
+      return;
+    }
+    
+    const lines = content.substring(sectionStart).split('\n');
+    let imported = 0;
+    
+    for (const line of lines) {
+      if (line.includes('|') && !line.includes('---') && !line.includes('Name |')) {
+        const parts = line.split('|').map(p => p.trim()).filter(p => p !== '');
+        if (parts.length >= 3) {
+          const name = parts[0];
+          const title = parts[1];
+          const company = parts[2];
+          
+          // Duplicate check
+          const exists = prospects.some(p => p.name.toLowerCase() === name.toLowerCase() && p.company.toLowerCase() === company.toLowerCase());
+          if (!exists) {
+            const p = {
+              id: uid(),
+              name, title, company,
+              status: 'new',
+              source: 'morning-prep',
+              health: 'green',
+              interactions: [],
+              nextFollowupDate: null,
+              notes: '',
+              owner: 'Ladson',
+              created_at: todayStr()
+            };
+            prospects.unshift(p);
+            pushProspectToSupabase(p);
+            imported++;
+          }
+        }
+      }
+      // Stop at next header
+      if (line.startsWith('## ') && !line.includes('5 New ICP Prospects')) break;
+    }
+    
+    if (imported > 0) {
+      alert(`Imported ${imported} new prospects!`);
+      renderScreen();
+    } else {
+      alert('No new prospects found or all were duplicates.');
+    }
+  } catch (e) {
+    alert('Error reading daily-staging.md: ' + e.message);
+  }
+}
+
 async function autoImportFromWorkspace(handle) {
   try {
     const fileHandle = await handle.getFileHandle('TASKS.md');
@@ -5900,12 +7117,19 @@ function startAutoImport() {
   if (autoImportInterval) clearInterval(autoImportInterval);
   autoImportInterval = setInterval(async () => {
     if (!workspaceDirHandle) return;
+    // Phase 4.1: Only poll if tab is visible
+    if (document.visibilityState !== 'visible') return;
+
     const perm = await workspaceDirHandle.queryPermission({ mode: 'read' });
     if (perm === 'granted') {
       await autoImportFromWorkspace(workspaceDirHandle);
       await autoImportPlaybookResources(workspaceDirHandle);
+      
+      const now = new Date();
+      lastAutoSync = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+      if (document.getElementById('cloudSyncGroup')) renderSync(); 
     }
-  }, 5 * 60 * 1000); // every 5 minutes
+  }, 30000); // 30 seconds
 }
 
 async function manualSyncFromWorkspace() {
@@ -6087,6 +7311,7 @@ if ('serviceWorker' in navigator) {
 document.addEventListener('keydown', function(e) {
   if (e.key !== 'Escape') return;
   const modalMap = [
+    { id: 'quickCaptureModal', fn: () => typeof closeQuickCaptureModal === 'function' && closeQuickCaptureModal() },
     { id: 'modal', fn: () => typeof closeModal === 'function' && closeModal() },
     { id: 'reviewModal', fn: () => typeof closeReviewModal === 'function' && closeReviewModal() },
     { id: 'decisionModal', fn: () => typeof closeDecisionModal === 'function' && closeDecisionModal() },
@@ -6223,6 +7448,55 @@ function renderWeeklyReviews() {
   const all = JSON.parse(localStorage.getItem(WEEKLY_REVIEWS_KEY) || '[]');
   return all.sort((a, b) => b.weekStart.localeCompare(a.weekStart));
 }
+
+// ===================== PHASE 5.2 & 5.3 RELIABILITY =====================
+function saveEmailFallback() {
+    const val = document.getElementById('emailFallbackInput').value.trim();
+    localStorage.setItem('EMAIL_FALLBACK', val);
+    const status = document.getElementById('tokenRefreshStatus');
+    if (status) { status.textContent = 'Email saved!'; status.style.display = 'block'; setTimeout(()=>status.style.display='none', 2000); }
+}
+
+async function refreshAndCopyToken() {
+  if (!sb) return;
+  const { data, error } = await sb.auth.refreshSession();
+  if (error) { alert('Refresh failed: ' + error.message); return; }
+  
+  if (data?.session) {
+    navigator.clipboard.writeText(data.session.access_token);
+    const status = document.getElementById('tokenRefreshStatus');
+    if (status) { status.style.display = 'block'; setTimeout(()=>status.style.display='none', 3000); }
+    renderSync();
+  }
+}
+
+async function checkTaskHeartbeat() {
+  if (!workspaceDirHandle) return;
+  try {
+    const fileHandle = await workspaceDirHandle.getFileHandle('outreach/trackers/task-heartbeat.json');
+    const file = await fileHandle.getFile();
+    const content = await file.text();
+    const data = JSON.parse(content);
+    
+    // If last_run was more than 24h ago
+    const lastRun = new Date(data.last_run);
+    const diffHours = (new Date() - lastRun) / (1000 * 60 * 60);
+    
+    if (diffHours > 24) {
+      showToast('⚠️ Scheduled tasks (Claude) may be stalled. Last run: ' + data.last_run, 'error');
+    }
+  } catch (e) {
+    // Silently skip if file doesn't exist yet
+  }
+}
+
+// Background token refresh every 50 mins
+setInterval(async () => {
+    if (sb && currentUser) {
+        await sb.auth.refreshSession();
+        console.log('Session token refreshed automatically');
+    }
+}, 50 * 60 * 1000);
 
 // ===================== START =====================
 startApp();

@@ -286,5 +286,84 @@ CREATE POLICY "Users manage own recurring tasks" ON recurring_tasks
 
 ALTER PUBLICATION supabase_realtime ADD TABLE recurring_tasks;
 
-CREATE TRIGGER recurring_tasks_updated_at BEFORE UPDATE ON recurring_tasks
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ========== V3 ADDITIONS ==========
+
+-- 0.1 Domain
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS domain TEXT DEFAULT 'General';
+
+-- 0.2 Due Date
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due_date TEXT DEFAULT NULL;
+
+-- 0.3 Status
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'not-started';
+
+-- 0.4 Phase
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS phase TEXT DEFAULT NULL;
+
+-- 0.5 Owner
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS owner TEXT DEFAULT 'Ladson';
+
+-- 0.6 Dependencies
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS dependencies JSONB DEFAULT '[]'::jsonb;
+
+-- 0.7 OKR ID
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS okr_id TEXT DEFAULT NULL;
+
+-- 0.8 Outreach Logs Table
+CREATE TABLE IF NOT EXISTS outreach_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  date TEXT NOT NULL,
+  prospects_found INTEGER DEFAULT 0,
+  messages_sent INTEGER DEFAULT 0,
+  replies_received INTEGER DEFAULT 0,
+  calls_booked INTEGER DEFAULT 0,
+  linkedin_comments INTEGER DEFAULT 0,
+  x_replies INTEGER DEFAULT 0,
+  reddit_comments INTEGER DEFAULT 0,
+  warm_leads INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, date)
+);
+
+ALTER TABLE outreach_logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users manage own outreach logs" ON outreach_logs
+  FOR ALL USING (auth.uid() = user_id);
+
+-- 0.9 Expenses Table
+CREATE TABLE IF NOT EXISTS expenses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  date TEXT NOT NULL,
+  description TEXT NOT NULL,
+  category TEXT DEFAULT 'General',
+  amount_inr DECIMAL(12,2) DEFAULT 0,
+  amount_usd DECIMAL(12,2) DEFAULT 0,
+  notes TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE expenses ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users manage own expenses" ON expenses
+  FOR ALL USING (auth.uid() = user_id);
+
+-- 0.10 Milestones Table
+CREATE TABLE IF NOT EXISTS milestones (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  target_date TEXT,
+  achieved_date TEXT DEFAULT NULL,
+  target_value DECIMAL(12,2) DEFAULT 0,
+  current_value DECIMAL(12,2) DEFAULT 0,
+  unit TEXT DEFAULT '',
+  category TEXT DEFAULT 'General',
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE milestones ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users manage own milestones" ON milestones
+  FOR ALL USING (auth.uid() = user_id);

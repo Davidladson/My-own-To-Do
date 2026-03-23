@@ -21,7 +21,7 @@
   <meta property="og:url" content="https://malveon.github.io/">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-  <link rel="stylesheet" href="./style.css?v=22">
+  <link rel="stylesheet" href="./style.css?v=23">
 </head>
 
 <body>
@@ -81,9 +81,35 @@
 
     <div class="tabs" id="tabsContainer"></div>
     <div id="quickCapture" class="quick-capture" style="display:none">
-      <input type="text" id="quickCaptureInput" placeholder="Quick add a task..."
+      <input type="text" id="quickCaptureInputLegacy" placeholder="Quick add a task..."
         onkeydown="if(event.key==='Enter')quickAdd()">
     </div>
+    
+    <div id="v3Toolbar" class="v3-toolbar" style="display:none; padding:10px 20px; gap:10px; align-items:center;">
+      <input type="text" id="searchInput" placeholder="Search tasks..." oninput="searchTasks(this.value)" style="flex:1; padding:8px 12px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:14px;">
+      <button class="auth-btn-secondary" onclick="toggleBulkActions()" style="padding:8px 12px; height:auto; font-size:12px;">Bulk</button>
+    </div>
+    
+    <div id="bulkActionBar" class="bulk-action-bar" style="display:none; padding:10px 20px; background:var(--surface); border-bottom:1px solid var(--border);">
+      <div style="font-size:12px; font-weight:bold; margin-bottom:8px; color:var(--text);">Bulk Actions (<span id="bulkCount">0</span> selected)</div>
+      <div style="display:flex; gap:8px; overflow-x:auto; padding-bottom:4px;">
+        <select id="bulkStatusSelect" onchange="applyBulkAction('status', this.value)" style="padding:6px; font-size:12px; border-radius:6px;">
+          <option value="">Set Status...</option>
+          <option value="not-started">Not Started</option>
+          <option value="in-progress">In Progress</option>
+          <option value="blocked">Blocked</option>
+          <option value="done">Done</option>
+        </select>
+        <select id="bulkPhaseSelect" onchange="applyBulkAction('phase', this.value)" style="padding:6px; font-size:12px; border-radius:6px;">
+          <option value="">Set Phase...</option>
+          <option value="planning">Planning</option>
+          <option value="execution">Execution</option>
+          <option value="review">Review</option>
+        </select>
+        <button class="btn-delete" style="padding:6px 12px; font-size:12px;" onclick="applyBulkAction('delete')">Delete</button>
+      </div>
+    </div>
+
     <div id="reviewPrompt"></div>
     <div class="task-list" id="taskList"></div>
     <div class="playbook-section" id="playbookSection"></div>
@@ -92,6 +118,7 @@
     <div id="v2Content"></div>
 
     <button class="fab-v2 fab-final-fix" id="fabBtn" onclick="openAddModal()" style="bottom: 110px !important;">+</button>
+    <button class="quick-add-fab" id="quickAddFab" onclick="openQuickCaptureModal()">⚡</button>
 
     <!-- Bottom Navigation Bar -->
     <nav class="bottom-nav" id="bottomNav">
@@ -133,13 +160,79 @@
           <option value="someday">Someday</option>
           <option value="reminders">Standalone Reminder</option>
         </select>
-        <label>Priority</label>
-        <select id="priorityInput">
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="low">Low</option>
         </select>
-        <label>Notes (optional)</label>
+        
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px;">
+          <div>
+            <label style="margin-top:0;">Priority</label>
+            <select id="priorityInput">
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+          <div>
+             <label style="margin-top:0;">Status</label>
+             <select id="statusInput">
+               <option value="not-started">Not Started</option>
+               <option value="in-progress">In Progress</option>
+               <option value="blocked">Blocked</option>
+               <option value="done">Done</option>
+             </select>
+          </div>
+          <div>
+            <label>Domain</label>
+            <select id="domainInput">
+              <option value="General">General</option>
+              <option value="Product">Product</option>
+              <option value="Engineering">Engineering</option>
+              <option value="Sales">Sales</option>
+              <option value="Marketing">Marketing</option>
+              <option value="Operations">Operations</option>
+              <option value="Design">Design</option>
+              <option value="Finance">Finance</option>
+              <option value="Legal">Legal</option>
+              <option value="HR">HR</option>
+              <option value="Support">Support</option>
+              <option value="Growth">Growth</option>
+            </select>
+          </div>
+          <div>
+            <label>Phase</label>
+            <select id="phaseInput">
+              <option value="">None</option>
+              <option value="planning">Planning</option>
+              <option value="execution">Execution</option>
+              <option value="review">Review</option>
+            </select>
+          </div>
+          <div>
+            <label>Owner</label>
+            <input type="text" id="ownerInput" placeholder="Ladson">
+          </div>
+          <div>
+            <label>Due Date</label>
+            <input type="date" id="dueDateInput">
+          </div>
+          <div>
+            <label>Link to OKR</label>
+            <select id="okrInput">
+              <option value="">None</option>
+            </select>
+          </div>
+          <div style="grid-column: span 2;">
+            <label>Dependencies</label>
+            <div id="modalDepsList" style="margin-bottom:8px;"></div>
+            <div style="display:flex; gap:8px;">
+              <select id="modalDepSel" style="flex:1; padding:10px; border-radius:10px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:14px;">
+                <option value="">Add dependency...</option>
+              </select>
+              <button onclick="addModalDep()" style="background:var(--accent); color:white; border:none; border-radius:10px; padding:0 16px; cursor:pointer; font-weight:600;">Add</button>
+            </div>
+          </div>
+        </div>
+
+        <label style="margin-top:12px;">Notes (optional)</label>
         <textarea id="notesInput" placeholder="Extra details..."></textarea>
         <div style="display:flex; justify-content:space-between; align-items:flex-end;">
           <label style="margin-bottom:0;">Remind me at (optional)</label>
@@ -152,6 +245,19 @@
         <div class="modal-actions" id="modalActions">
           <button class="btn-cancel" onclick="closeModal()">Cancel</button>
           <button class="btn-save" onclick="saveTask()">Add Task</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Capture Modal -->
+    <div class="modal-overlay" id="quickCaptureModal" onclick="if(event.target===this)closeQuickCaptureModal()">
+      <div class="modal">
+        <h2>Quick Capture</h2>
+        <input type="text" id="quickCaptureInput" placeholder="Got an idea? Type and hit Enter..."
+          onkeydown="if(event.key==='Enter')saveQuickCapture()" style="font-size:18px; padding:16px;">
+        <div class="modal-actions" style="margin-top:16px;">
+          <button class="btn-cancel" onclick="closeQuickCaptureModal()">Cancel</button>
+          <button class="btn-save" onclick="saveQuickCapture()">Save to Inbox</button>
         </div>
       </div>
     </div>
@@ -249,6 +355,33 @@
       </div>
     </div>
 
+    <!-- Custom Compliance Modal -->
+    <div class="modal-overlay" id="customComplianceModal" onclick="if(event.target===this)closeCustomComplianceModal()">
+      <div class="modal">
+        <h2>Add Custom Compliance</h2>
+        <label>Title</label>
+        <input type="text" id="ccTitleInput" placeholder="e.g. Server Renewal">
+        <label>Frequency</label>
+        <select id="ccFreqInput" onchange="toggleCcFreq()">
+          <option value="monthly">Monthly</option>
+          <option value="quarterly">Quarterly</option>
+          <option value="annual">Annual</option>
+        </select>
+        <div id="ccMonthGroup" style="display:none; margin-top:8px;">
+          <label>Month (1-12)</label>
+          <input type="number" id="ccMonthInput" min="1" max="12" placeholder="e.g. 4 for April">
+        </div>
+        <label style="margin-top:8px;">Day of Month</label>
+        <input type="number" id="ccDayInput" min="1" max="31" placeholder="e.g. 15">
+        <label style="margin-top:8px;">Description (optional)</label>
+        <input type="text" id="ccDescInput" placeholder="Brief description">
+        <div class="modal-actions" style="margin-top:16px;">
+          <button class="btn-cancel" onclick="closeCustomComplianceModal()">Cancel</button>
+          <button class="btn-save" onclick="saveCustomCompliance()">Add Item</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Add Recurring Task Modal -->
     <div class="modal-overlay" id="addRecurringModal" onclick="if(event.target===this)closeAddRecurringModal()">
       <div class="modal">
@@ -305,7 +438,7 @@
 
   </div><!-- /mainApp -->
 
-  <script src="./app.js?v=22"></script>
+  <script src="./app.js?v=23"></script>
 
 
   

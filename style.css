@@ -2365,3 +2365,41 @@
   resize: vertical;
   line-height: 1.5;
 }
+
+/* V3 Additions */
+.quick-add-fab {
+  position: fixed;
+  bottom: 110px;
+  right: 90px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--yellow);
+  color: #fff;
+  border: none;
+  font-size: 28px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  cursor: pointer;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s;
+}
+.quick-add-fab:active {
+  transform: scale(0.9);
+}
+.bulk-checkbox {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin-right: 12px;
+  cursor: pointer;
+}
+.v3-toolbar {
+  display: flex;
+}
+.bulk-action-bar {
+  display: flex;
+  flex-direction: column;
+}
