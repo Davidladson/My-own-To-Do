@@ -291,7 +291,7 @@ let activeSection = localStorage.getItem(NAV_KEY) || 'tasks';
 let activeTopTab = null; // set per section
 
 const SECTIONS = {
-  tasks: ['Inbox', 'Today', 'Habits', 'This Week', 'Recurring', 'Calendar', 'Domains', 'Kavin', 'Reminders', 'Done'],
+  tasks: ['Inbox', 'Today', 'Habits', 'This Week', 'Someday', 'Recurring', 'Calendar', 'Domains', 'Kavin', 'Reminders', 'Done'],
   ops: ['Compliance', 'OKR', 'Milestones', 'Decisions', 'Delegation', 'Review', 'Playbook'],
   crm: ['Pipeline', 'Pilots', 'Insights'],
   analytics: ['Outreach', 'Runway', 'History', 'Velocity', 'Workload', 'Sync']
@@ -300,7 +300,7 @@ const SECTIONS = {
 // Map V2 top tab names back to legacy activeTab values for backward compat
 const TAB_TO_LEGACY = {
   'Inbox': 'inbox', 'Today': 'today', 'Habits': 'daily-habits', 'This Week': 'this-week',
-  'Recurring': 'recurring', 'Reminders': 'reminders', 'Calendar': 'calendar', 'Domains': 'domains', 'Kavin': 'kavin', 'Done': 'done',
+  'Someday': 'someday', 'Recurring': 'recurring', 'Reminders': 'reminders', 'Calendar': 'calendar', 'Domains': 'domains', 'Kavin': 'kavin', 'Done': 'done',
   'Compliance': 'compliance', 'OKR': 'okr', 'Milestones': 'milestones', 'Decisions': 'decisions',
   'Delegation': 'delegation', 'Review': 'review', 'Playbook': 'playbook',
   'Pipeline': 'pipeline', 'Pilots': 'pilots', 'Insights': 'insights',
@@ -371,7 +371,7 @@ function renderTopTabs() {
     }
     else if (legacy === 'reminders') count = `<span class="count">${tasks.filter(x => !x.done && (x.cat === 'reminders' || x.reminderTime)).length}</span>`;
     else if (legacy === 'playbook') count = `<span class="count">${resources.length}</span>`;
-    else if (['today', 'daily-habits', 'this-week'].includes(legacy)) count = `<span class="count">${tasks.filter(x => x.cat === legacy && !x.done).length}</span>`;
+    else if (['today', 'daily-habits', 'this-week', 'someday', 'before-pilot', 'waiting'].includes(legacy)) count = `<span class="count">${tasks.filter(x => x.cat === legacy && !x.done).length}</span>`;
     return `<button class="tab ${isActive ? 'active' : ''}" onclick="switchTab('${t}')">${t}${count}</button>`;
   }).join('');
 }
@@ -1956,6 +1956,8 @@ function renderView() {
 
   syncEl.style.display = 'none';
   playbookEl.style.display = 'none';
+  remindersEl.style.display = 'none';
+  reviewEl.innerHTML = '';
   renderTasks();
   checkReviewPrompt();
 }
@@ -5623,6 +5625,7 @@ function saveTask() {
   const okrInputEle = document.getElementById('okrInput');
   const okrId = okrInputEle ? (okrInputEle.value || null) : null;
 
+  const wasEditingId = editingId; // capture before closeModal() clears it
   if (editingId) {
     const t = tasks.find(x => x.id === editingId);
     if (t) {
@@ -5649,6 +5652,8 @@ function saveTask() {
     pushTaskToSupabase(newTask);
   }
   save(); closeModal(); renderTopTabs(); renderScreen(); updateProgress();
+  // Re-open detail panel with fresh data after an edit so changes are immediately visible
+  if (wasEditingId) openTaskDetail(wasEditingId);
 }
 
 function deleteTask(id) {
