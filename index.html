@@ -354,6 +354,29 @@
       </div>
     </div>
 
+    <!-- Log Outreach Modal -->
+    <div class="modal-overlay" id="logOutreachModal" onclick="if(event.target===this)closeLogOutreachModal()">
+      <div class="modal">
+        <h2>Log Today's Outreach</h2>
+        <label>Messages Sent (LinkedIn DMs + emails)</label>
+        <input type="number" id="logOutreachSent" min="0" value="0">
+        <label>Replies Received</label>
+        <input type="number" id="logOutreachReplies" min="0" value="0">
+        <label>Calls Booked</label>
+        <input type="number" id="logOutreachCalls" min="0" value="0">
+        <label>LinkedIn Comments</label>
+        <input type="number" id="logOutreachLinkedin" min="0" value="0">
+        <label>X / Twitter Replies</label>
+        <input type="number" id="logOutreachX" min="0" value="0">
+        <label>New Prospects Found</label>
+        <input type="number" id="logOutreachProspects" min="0" value="0">
+        <div class="modal-actions" style="margin-top: 16px;">
+          <button class="btn-cancel" onclick="closeLogOutreachModal()">Cancel</button>
+          <button class="btn-save" onclick="saveLogOutreach()">Save</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Custom Compliance Modal -->
     <div class="modal-overlay" id="customComplianceModal" onclick="if(event.target===this)closeCustomComplianceModal()">
       <div class="modal">

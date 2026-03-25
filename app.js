@@ -216,7 +216,10 @@ let editingResourceId = null;
 async function syncOutreachLogs() {
   if (!currentUser || !sb) return;
   const { data, error } = await sb.from('outreach_logs').select('*').eq('user_id', currentUser.id).order('date', { ascending: false });
-  if (!error && data) outreach_logs = data;
+  if (!error && data) {
+    outreach_logs = data;
+    localStorage.setItem('malveon_outreach_logs', JSON.stringify(data));
+  }
 }
 async function saveOutreachLog(dateStr, data) {
   if (!currentUser || !sb) return;
@@ -796,7 +799,9 @@ async function processQueue() {
   for (const item of queue) {
     try {
       if (item.action === 'upsert') {
-        const { error } = await sb.from(item.table).upsert(item.data, { onConflict: 'id' });
+        // outreach_logs uses (user_id, date) as unique key, not id
+        const conflictKey = item.table === 'outreach_logs' ? 'user_id, date' : 'id';
+        const { error } = await sb.from(item.table).upsert(item.data, { onConflict: conflictKey });
         if (error) { remaining.push(item); console.log('Queue upsert error:', error); }
       } else if (item.action === 'delete') {
         const { error } = await sb.from(item.table).delete().eq('id', item.data.id);
@@ -1461,6 +1466,9 @@ async function syncFromSupabase() {
           });
           Object.values(localMap).forEach(item => merged.push(item));
           set(merged);
+          // Persist merged data to localStorage for offline fallback
+          const lsKeyMap = { prospects: 'malveon_prospects', pilots: 'malveon_pilots', insights: 'malveon_insights', recurring_tasks: 'v2_recurringTasks' };
+          if (lsKeyMap[table]) localStorage.setItem(lsKeyMap[table], JSON.stringify(merged));
         }
       } catch (e) { console.log(`Sync ${table} error:`, e); }
     }
@@ -1677,6 +1685,12 @@ async function initApp() {
   resources = JSON.parse(localStorage.getItem(RESOURCES_KEY) || '[]');
   decisions = JSON.parse(localStorage.getItem('malveon_decisions') || '[]');
   delegations = JSON.parse(localStorage.getItem(DELEGATIONS_KEY) || '[]');
+  // V2/V3: offline fallback - load from localStorage before Supabase sync arrives
+  prospects = JSON.parse(localStorage.getItem('malveon_prospects') || '[]');
+  pilots = JSON.parse(localStorage.getItem('malveon_pilots') || '[]');
+  insights = JSON.parse(localStorage.getItem('malveon_insights') || '[]');
+  recurringTasks = JSON.parse(localStorage.getItem('v2_recurringTasks') || '[]');
+  outreach_logs = JSON.parse(localStorage.getItem('malveon_outreach_logs') || '[]');
 
   try {
     const deletedArr = JSON.parse(localStorage.getItem(DELETED_TASKS_KEY) || '[]');
@@ -1885,6 +1899,7 @@ function saveEndOfDaySnapshot(dateStr) {
 function updateStreak() {
   let streak = JSON.parse(localStorage.getItem(STREAK_KEY) || '{"count":0,"lastDate":""}');
   const el = document.getElementById('streakDisplay');
+  if (!el) return; // element only exists on certain screens
   el.innerHTML = streak.count > 0 ? streak.count + ' day streak' : '';
 }
 
@@ -2286,6 +2301,47 @@ function toggleOkrValue(key) {
   }
 }
 
+
+// ===================== LOG OUTREACH MODAL =====================
+function openLogOutreachModal() {
+  const today = todayStr();
+  const existing = outreach_logs.find(l => l.date === today) || {};
+  document.getElementById('logOutreachSent').value = existing.messages_sent || 0;
+  document.getElementById('logOutreachReplies').value = existing.replies_received || 0;
+  document.getElementById('logOutreachCalls').value = existing.calls_booked || 0;
+  document.getElementById('logOutreachLinkedin').value = existing.linkedin_comments || 0;
+  document.getElementById('logOutreachX').value = existing.x_replies || 0;
+  document.getElementById('logOutreachProspects').value = existing.prospects_found || 0;
+  document.getElementById('logOutreachModal').classList.add('open');
+}
+
+function closeLogOutreachModal() {
+  document.getElementById('logOutreachModal').classList.remove('open');
+}
+
+async function saveLogOutreach() {
+  const today = todayStr();
+  const data = {
+    messages_sent: parseInt(document.getElementById('logOutreachSent').value) || 0,
+    replies_received: parseInt(document.getElementById('logOutreachReplies').value) || 0,
+    calls_booked: parseInt(document.getElementById('logOutreachCalls').value) || 0,
+    linkedin_comments: parseInt(document.getElementById('logOutreachLinkedin').value) || 0,
+    x_replies: parseInt(document.getElementById('logOutreachX').value) || 0,
+    prospects_found: parseInt(document.getElementById('logOutreachProspects').value) || 0
+  };
+  // Update local array
+  const idx = outreach_logs.findIndex(l => l.date === today);
+  if (idx >= 0) {
+    outreach_logs[idx] = { ...outreach_logs[idx], ...data, date: today };
+  } else {
+    outreach_logs.unshift({ date: today, ...data });
+  }
+  // Persist offline fallback
+  localStorage.setItem('malveon_outreach_logs', JSON.stringify(outreach_logs));
+  await saveOutreachLog(today, data);
+  closeLogOutreachModal();
+  renderOutreachAnalytics();
+}
 
 function openOkrModal() {
   const okr = JSON.parse(localStorage.getItem(OKR_KEY) || 'null');
@@ -4158,22 +4214,25 @@ function renderOutreachAnalytics() {
 
   let html = `
     <div style="margin-bottom:24px;">
-      ${sectionLabel('Outreach Overview')}
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        ${sectionLabel('Outreach Overview')}
+        <button onclick="openLogOutreachModal()" class="v2-button-teal" style="padding:6px 14px; font-size:12px;">+ Log Today</button>
+      </div>
       <div class="metric-cards-row">
-        ${metricCard('Sent Today', todayLog.messages_sent, '')}
+        ${metricCard('Sent Today', todayLog.messages_sent || 0, '')}
         ${metricCard('Reply Rate (7d)', replyRate + '%', replyRate > 10 ? 'green' : '')}
         ${metricCard('Calls This Week', callsBooked, callsBooked > 0 ? 'amber' : '')}
         ${metricCard('Warm Leads', warmLeads, 'blue')}
       </div>
     </div>
-    
+
     <div style="margin-bottom:32px;">
       ${sectionLabel('Activity (Last 30 Days)')}
       <div class="v2-card" style="padding:16px;">
         <canvas id="outreachChart" style="width:100%; height:200px;"></canvas>
       </div>
     </div>
-    
+
     <div style="margin-bottom:32px;">
       ${sectionLabel('Pipeline Funnel')}
       <div class="v2-card" style="padding:20px;">
@@ -5470,12 +5529,6 @@ function downloadBoth() {
   showSyncStatus('syncStatus');
 }
 
-function showSyncStatus(id) {
-  const el = document.getElementById(id);
-  el.style.display = 'block';
-  setTimeout(() => el.style.display = 'none', 3000);
-}
-
 // ===================== COPY FOR CLAUDE =====================
 function copyForClaude() {
   const today = todayStr();
@@ -6627,7 +6680,7 @@ function renderSync() {
       <h3>Force Sync with TASKS.md</h3>
       <p>Wipes all local tasks (and cloud) and cleanly re-imports exactly what is currently written in your TASKS.md file. Fixes zombie tasks.</p>
       <button class="sync-btn remove" onclick="forceSyncTasks()">Force Sync</button>
-      <div id="forceSyncStatus" class="sync-status"></div>
+      <div id="forceSyncTasksStatus" class="sync-status"></div>
     </div>`;
 
   html += '</div>';
@@ -6953,23 +7006,27 @@ async function importProspectsFromStagingFile() {
         const parts = line.split('|').map(p => p.trim()).filter(p => p !== '');
         if (parts.length >= 3) {
           const name = parts[0];
-          const title = parts[1];
-          const company = parts[2];
-          
+          // Format: | Name | Company (context in parens) | Role/Title | LinkedIn | Hook |
+          const companyRaw = parts[1] || '';
+          const company = companyRaw.split('(')[0].trim(); // strip "(Series B, Bangalore...)" context
+          const title = parts[2] || '';
+          const linkedinUrl = parts[3] ? parts[3].replace(/VERIFY.*$/i, '').trim() : '';
+          const notes = parts[4] || '';
+
+          if (!name || !company) continue;
+
           // Duplicate check
           const exists = prospects.some(p => p.name.toLowerCase() === name.toLowerCase() && p.company.toLowerCase() === company.toLowerCase());
           if (!exists) {
             const p = {
               id: uid(),
               name, title, company,
+              linkedinUrl,
               status: 'new',
               source: 'morning-prep',
-              health: 'green',
-              interactions: [],
               nextFollowupDate: null,
-              notes: '',
-              owner: 'Ladson',
-              created_at: todayStr()
+              notes,
+              updatedAt: new Date().toISOString()
             };
             prospects.unshift(p);
             pushProspectToSupabase(p);
@@ -6977,7 +7034,7 @@ async function importProspectsFromStagingFile() {
           }
         }
       }
-      // Stop at next header
+      // Stop at next section header (but not the current one)
       if (line.startsWith('## ') && !line.includes('5 New ICP Prospects')) break;
     }
     
@@ -7234,7 +7291,7 @@ function clearDefaultTasks() {
 async function forceSyncTasks() {
   if (!confirm('This will wipe all current tasks from the app and the cloud, then re-import them directly from TASKS.md.\n\nAre you sure you want to force sync?')) return;
 
-  const statusEl = document.getElementById('forceSyncStatus');
+  const statusEl = document.getElementById('forceSyncTasksStatus');
   if (statusEl) {
     statusEl.textContent = 'Wiping tasks...';
     statusEl.style.display = 'block';
@@ -7322,6 +7379,7 @@ document.addEventListener('keydown', function(e) {
     { id: 'decisionModal', fn: () => typeof closeDecisionModal === 'function' && closeDecisionModal() },
     { id: 'delegationModal', fn: () => typeof closeDelegationModal === 'function' && closeDelegationModal() },
     { id: 'okrModal', fn: () => typeof closeOkrModal === 'function' && closeOkrModal() },
+    { id: 'logOutreachModal', fn: () => typeof closeLogOutreachModal === 'function' && closeLogOutreachModal() },
     { id: 'addRecurringModal', fn: () => typeof closeAddRecurringModal === 'function' && closeAddRecurringModal() },
     { id: 'resourceModal', fn: () => typeof closeResourceModal === 'function' && closeResourceModal() },
     { id: 'prospectModal', fn: () => typeof closeProspectModal === 'function' && closeProspectModal() },
