@@ -2143,6 +2143,22 @@ function renderToday() {
     ${metricCard(focusLabel, focusStr, activeFocusTaskId ? 'teal' : '')}
   </div>`;
 
+  // Quick Log Row — shortcuts to Ops sections from Today tab
+  const okr = JSON.parse(localStorage.getItem(OKR_KEY) || 'null');
+  const okrLabel = okr && okr.one ? '✅ OKR Set' : '🎯 Set OKR';
+  const hasReviewToday = dailyLog.find(e => e.date === todayStr() && e.review);
+  const reviewLabel = hasReviewToday ? '✅ Reviewed' : '📝 Night Review';
+  html += `
+  <div style="margin-bottom:20px;">
+    <div style="font-size:11px;font-weight:700;color:var(--text-dim);letter-spacing:0.5px;text-transform:uppercase;margin-bottom:8px;">Quick Log</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button onclick="openReviewModal()" style="flex:1;min-width:120px;padding:10px 8px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:12px;font-weight:600;cursor:pointer;text-align:center;">${reviewLabel}</button>
+      <button onclick="openOkrModal()" style="flex:1;min-width:120px;padding:10px 8px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:12px;font-weight:600;cursor:pointer;text-align:center;">${okrLabel}</button>
+      <button onclick="openDecisionModal()" style="flex:1;min-width:120px;padding:10px 8px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:12px;font-weight:600;cursor:pointer;text-align:center;">📌 Log Decision</button>
+      <button onclick="openDelegationModal()" style="flex:1;min-width:120px;padding:10px 8px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:12px;font-weight:600;cursor:pointer;text-align:center;">📋 Delegate Task</button>
+    </div>
+  </div>`;
+
   // Priority-grouped Task List
   const pending = todayTasks.filter(t => !t.done);
   const pOrder = { high: 0, medium: 1, low: 2 };
@@ -6987,7 +7003,9 @@ async function importProspectsFromStagingFile() {
     return;
   }
   try {
-    const fileHandle = await workspaceDirHandle.getFileHandle('outreach/trackers/daily-staging.md');
+    const outreachDir = await workspaceDirHandle.getDirectoryHandle('outreach');
+    const trackersDir = await outreachDir.getDirectoryHandle('trackers');
+    const fileHandle = await trackersDir.getFileHandle('daily-staging.md');
     const file = await fileHandle.getFile();
     const content = await file.text();
     
@@ -7536,7 +7554,9 @@ async function refreshAndCopyToken() {
 async function checkTaskHeartbeat() {
   if (!workspaceDirHandle) return;
   try {
-    const fileHandle = await workspaceDirHandle.getFileHandle('outreach/trackers/task-heartbeat.json');
+    const outreachDirHb = await workspaceDirHandle.getDirectoryHandle('outreach');
+    const trackersDirHb = await outreachDirHb.getDirectoryHandle('trackers');
+    const fileHandle = await trackersDirHb.getFileHandle('task-heartbeat.json');
     const file = await fileHandle.getFile();
     const content = await file.text();
     const data = JSON.parse(content);
