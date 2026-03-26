@@ -2341,12 +2341,12 @@ function seedWorkspaceData() {
       },
       {
         id: 'dec-seed-004',
-        date: '2026-03-11',
-        decision: 'ICP targeting priority: India-first (Series A/B, 20-60 engineers), then US/Europe',
-        reason: 'Same timezone for onboarding and support. No competition from US-focused tools yet. Lower cost per outreach.',
+        date: '2026-03-26',
+        decision: 'ICP targeting priority: US/UK first (Series A/B, 20-60 engineers), then India',
+        reason: 'Largest market with highest willingness to pay. US/UK EMs respond faster to cold outreach and have budget authority. India secondary.',
         decidedBy: 'Ladson',
         domain: 'sales',
-        updatedAt: '2026-03-11T00:00:00Z'
+        updatedAt: '2026-03-26T00:00:00Z'
       },
       {
         id: 'dec-seed-005',
