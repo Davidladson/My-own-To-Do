@@ -43,14 +43,11 @@
         <button class="auth-btn-secondary" onclick="authAction('signup')">Create Account</button>
         <button class="auth-btn-primary" onclick="authAction('signin')">Sign In</button>
       </div>
-      <div class="auth-skip">
-        <a onclick="skipAuth()">Skip - use offline only</a>
-      </div>
     </div>
   </div>
 
   <!-- Main App (hidden until auth) -->
-  <div id="mainApp">
+  <div id="mainApp" style="display:none">
     <div class="offline-banner" id="offlineBanner">⚡ You're offline — changes saved locally</div>
 
     <div class="header">
@@ -461,7 +458,7 @@
 
   </div><!-- /mainApp -->
 
-  <script src="./app.js?v=25"></script>
+  <script src="./app.js?v=27"></script>
 
 
   

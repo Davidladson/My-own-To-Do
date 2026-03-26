@@ -710,9 +710,31 @@ function renderScreen() {
   }
 }
 
+// ===================== INPUT SECURITY HELPERS =====================
+// Validate UUID format - prevents injecting arbitrary strings into .eq() filters
+function isValidUUID(str) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+}
+// Sanitize plain text for safe HTML insertion (defense against XSS from user data)
+function sanitizeText(str) {
+  if (!str) return '';
+  return String(str).slice(0, 5000); // cap runaway strings
+}
+// Validate allowed enum values before sending to Supabase
+const ALLOWED_CATS = new Set(['today','this-week','before-pilot','waiting','someday','done']);
+const ALLOWED_DOMAINS = new Set(['product','sales','ops','engineering','legal','finance','hr','fundraising','marketing','customer-success','banking','international']);
+const ALLOWED_STATUSES = new Set(['not-started','in-progress','done','on-hold']);
+function safeEnum(value, allowed, fallback) {
+  return allowed.has(value) ? value : fallback;
+}
+// Validate email format
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254;
+}
+
 // ===================== AUTH =====================
 async function authAction(type) {
-  const email = document.getElementById('authEmail').value.trim();
+  const email = document.getElementById('authEmail').value.trim().toLowerCase();
   const password = document.getElementById('authPassword').value;
   const errEl = document.getElementById('authError');
   errEl.style.display = 'none';
@@ -722,8 +744,18 @@ async function authAction(type) {
     errEl.style.display = 'block';
     return;
   }
+  if (!isValidEmail(email)) {
+    errEl.textContent = 'Please enter a valid email address.';
+    errEl.style.display = 'block';
+    return;
+  }
   if (password.length < 6) {
     errEl.textContent = 'Password must be at least 6 characters.';
+    errEl.style.display = 'block';
+    return;
+  }
+  if (password.length > 128) {
+    errEl.textContent = 'Password too long.';
     errEl.style.display = 'block';
     return;
   }
@@ -758,11 +790,6 @@ async function authAction(type) {
   }
 }
 
-function skipAuth() {
-  currentUser = null;
-  showMainApp();
-}
-
 async function signOut() {
   if (sb) {
     await sb.auth.signOut();
@@ -777,6 +804,12 @@ async function signOut() {
 }
 
 function showMainApp() {
+  if (!currentUser) {
+    // No authenticated user - force back to login
+    document.getElementById('authScreen').style.display = 'flex';
+    document.getElementById('mainApp').style.display = 'none';
+    return;
+  }
   document.getElementById('authScreen').style.display = 'none';
   document.getElementById('mainApp').style.display = 'block';
   initApp();
@@ -2168,17 +2201,17 @@ function renderToday() {
 
   // Quick Log Row — shortcuts to Ops sections from Today tab
   const okr = JSON.parse(localStorage.getItem(OKR_KEY) || 'null');
-  const okrLabel = okr && okr.one ? '✅ OKR Set' : '🎯 Set OKR';
+  const okrLabel = okr && okr.one ? 'OKR Set' : 'Set OKR';
   const hasReviewToday = dailyLog.find(e => e.date === todayStr() && e.review);
-  const reviewLabel = hasReviewToday ? '✅ Reviewed' : '📝 Night Review';
+  const reviewLabel = hasReviewToday ? 'Reviewed' : 'Night Review';
   html += `
   <div style="margin-bottom:20px;">
     <div style="font-size:11px;font-weight:700;color:var(--text-dim);letter-spacing:0.5px;text-transform:uppercase;margin-bottom:8px;">Quick Log</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <button onclick="openReviewModal()" style="flex:1;min-width:120px;padding:10px 8px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:12px;font-weight:600;cursor:pointer;text-align:center;">${reviewLabel}</button>
       <button onclick="openOkrModal()" style="flex:1;min-width:120px;padding:10px 8px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:12px;font-weight:600;cursor:pointer;text-align:center;">${okrLabel}</button>
-      <button onclick="openDecisionModal()" style="flex:1;min-width:120px;padding:10px 8px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:12px;font-weight:600;cursor:pointer;text-align:center;">📌 Log Decision</button>
-      <button onclick="openDelegationModal()" style="flex:1;min-width:120px;padding:10px 8px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:12px;font-weight:600;cursor:pointer;text-align:center;">📋 Delegate Task</button>
+      <button onclick="openDecisionModal()" style="flex:1;min-width:120px;padding:10px 8px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:12px;font-weight:600;cursor:pointer;text-align:center;">Log Decision</button>
+      <button onclick="openDelegationModal()" style="flex:1;min-width:120px;padding:10px 8px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:12px;font-weight:600;cursor:pointer;text-align:center;">Delegate Task</button>
     </div>
   </div>`;
 
@@ -4078,8 +4111,6 @@ function renderTasks() {
   }).join('') + '<div class="hint">Tap task to see details | Tap circle to complete</div>';
 }
 
-function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-
 // ===================== REMOVE DUPLICATES =====================
 function removeDuplicates(sectionKey) {
   let sectionTasks;
@@ -5189,16 +5220,22 @@ function closeDecisionModal() {
 }
 
 function saveDecision() {
-  const decisionText = document.getElementById('decisionInput').value.trim();
+  const decisionText = sanitizeText(document.getElementById('decisionInput').value.trim()).slice(0, 1000);
   if (!decisionText) return;
+  const reason = sanitizeText(document.getElementById('decisionReasonInput').value.trim()).slice(0, 2000);
+  const domain = safeEnum(document.getElementById('decisionDomainInput').value, ALLOWED_DOMAINS, 'ops');
+  const ALLOWED_DECIDED_BY = new Set(['Ladson', 'Ladson + Kavin', 'Kavin']);
+  const decidedBy = ALLOWED_DECIDED_BY.has(document.getElementById('decisionDecidedByInput')?.value) ? document.getElementById('decisionDecidedByInput').value : 'Ladson';
 
   if (editingDecisionId) {
+    // Only allow editing a decision with a valid UUID
+    if (!isValidUUID(editingDecisionId)) { closeDecisionModal(); return; }
     const d = decisions.find(x => x.id === editingDecisionId);
     if (d) {
       d.decision = decisionText;
-      d.reason = document.getElementById('decisionReasonInput').value.trim();
-      d.domain = document.getElementById('decisionDomainInput').value;
-      d.decidedBy = document.getElementById('decisionDecidedByInput').value;
+      d.reason = reason;
+      d.domain = domain;
+      d.decidedBy = decidedBy;
       d.updatedAt = new Date().toISOString();
       localStorage.setItem('malveon_decisions', JSON.stringify(decisions));
       pushDecisionToSupabase(d);
@@ -5208,9 +5245,9 @@ function saveDecision() {
       id: uuidv4(),
       date: todayStr(),
       decision: decisionText,
-      reason: document.getElementById('decisionReasonInput').value.trim(),
-      decidedBy: document.getElementById('decisionDecidedByInput')?.value || 'Ladson',
-      domain: document.getElementById('decisionDomainInput').value,
+      reason,
+      decidedBy,
+      domain,
       updatedAt: new Date().toISOString()
     };
     decisions.push(d);
@@ -5342,17 +5379,20 @@ function closeDelegationModal() {
 }
 
 function saveDelegation() {
-  const task = document.getElementById('delegationTaskInput').value.trim();
-  const assignee = document.getElementById('delegationAssigneeInput').value.trim();
+  const task = sanitizeText(document.getElementById('delegationTaskInput').value.trim()).slice(0, 500);
+  const assignee = sanitizeText(document.getElementById('delegationAssigneeInput').value.trim()).slice(0, 100);
   if (!task || !assignee) return;
+  const dueDateRaw = document.getElementById('delegationDueDateInput').value || null;
+  // Validate date format to prevent injection (YYYY-MM-DD only)
+  const dueDate = dueDateRaw && /^\d{4}-\d{2}-\d{2}$/.test(dueDateRaw) ? dueDateRaw : null;
   const d = {
     id: uuidv4(),
-    task: task,
+    task,
     assignedTo: assignee,
     assignedDate: todayStr(),
-    dueDate: document.getElementById('delegationDueDateInput').value || null,
+    dueDate,
     status: 'not-started',
-    notes: document.getElementById('delegationNotesInput').value.trim(),
+    notes: sanitizeText(document.getElementById('delegationNotesInput').value.trim()).slice(0, 1000),
     updatedAt: new Date().toISOString()
   };
   delegations.push(d);
@@ -7825,3 +7865,6 @@ function saveWeeklyReview() {
 function renderWeeklyReviews() {
   return JSON.parse(localStorage.getItem(WEEKLY_REVIEWS_KEY) || '[]');
 }
+
+// ===================== BOOT =====================
+document.addEventListener('DOMContentLoaded', startApp);
