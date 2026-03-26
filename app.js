@@ -7776,4 +7776,52 @@ function saveWeeklyReview() {
     weekStart: monday,
     savedAt: new Date().toISOString(),
     wins: document.getElementById('wr-wins')?.value.trim() || '',
-    failures: document.getElemen
+    failures: document.getElementById('wr-failures')?.value.trim() || '',
+    outreachSent: parseInt(document.getElementById('wr-outreach-sent')?.value || '0', 10),
+    outreachReplies: parseInt(document.getElementById('wr-outreach-replies')?.value || '0', 10),
+    callsBooked: parseInt(document.getElementById('wr-calls-booked')?.value || '0', 10),
+    pilots: parseInt(document.getElementById('wr-pilots')?.value || '0', 10),
+    energy: parseInt(document.getElementById('wr-energy')?.value || '3', 10),
+    focus: parseInt(document.getElementById('wr-focus')?.value || '3', 10),
+    execution: parseInt(document.getElementById('wr-exec')?.value || '3', 10),
+    health: document.getElementById('wr-health')?.value.trim() || '',
+    next1: document.getElementById('wr-next1')?.value.trim() || '',
+    next2: document.getElementById('wr-next2')?.value.trim() || '',
+    next3: document.getElementById('wr-next3')?.value.trim() || '',
+    stop: document.getElementById('wr-stop')?.value.trim() || '',
+    score: parseInt(document.getElementById('wr-score')?.value || '7', 10),
+    selfFeedback: document.getElementById('wr-self-feedback')?.value.trim() || ''
+  };
+
+  // Save to localStorage
+  const reviews = JSON.parse(localStorage.getItem(WEEKLY_REVIEWS_KEY) || '[]');
+  const existingIdx = reviews.findIndex(r => r.id === review.id);
+  if (existingIdx >= 0) {
+    reviews[existingIdx] = review;
+  } else {
+    reviews.unshift(review);
+  }
+  localStorage.setItem(WEEKLY_REVIEWS_KEY, JSON.stringify(reviews));
+
+  // Auto-set OKR for next week if next1 is filled
+  if (review.next1) {
+    const nextWeekOkr = {
+      one: review.next1,
+      bonus1: review.next2 || '',
+      bonus2: review.next3 || '',
+      oneDone: false,
+      bonus1Done: false,
+      bonus2Done: false,
+      weekStart: getMondayStr(1)
+    };
+    localStorage.setItem(OKR_KEY, JSON.stringify(nextWeekOkr));
+  }
+
+  closeWeeklyReviewModal();
+  if (typeof renderOpsV2 === 'function') renderOpsV2();
+  showToast('Weekly review saved!');
+}
+
+function renderWeeklyReviews() {
+  return JSON.parse(localStorage.getItem(WEEKLY_REVIEWS_KEY) || '[]');
+}
