@@ -1699,6 +1699,7 @@ async function initApp() {
     deletedTaskTexts = new Set();
   }
 
+  seedWorkspaceData();
   checkDayReset();
   updateDate();
   updateStreak();
@@ -2287,6 +2288,140 @@ function calculateWeeklyAverage() {
   if (daysInLog < 1) daysInLog = 1;
   const weeks = daysInLog / 7;
   return Math.round(totalTasksDone / weeks);
+}
+
+// ===================== WORKSPACE SEED (runs once) =====================
+function seedWorkspaceData() {
+  if (localStorage.getItem('malveon_workspace_seeded_v1')) return;
+
+  // --- OKR: Week of March 23-29 ---
+  if (!localStorage.getItem(OKR_KEY)) {
+    const okr = {
+      one: 'Write Malveon demo script (3 screens, ~500 words) and share with Kavin',
+      bonus1: 'Discovery call prep - practice all 5 questions from memory',
+      bonus2: 'Send 5 LinkedIn connection requests to new ICP prospects',
+      oneDone: false,
+      bonus1Done: false,
+      bonus2Done: false,
+      weekStart: '2026-03-23'
+    };
+    localStorage.setItem(OKR_KEY, JSON.stringify(okr));
+  }
+
+  // --- DECISIONS ---
+  const existingDecisions = JSON.parse(localStorage.getItem('malveon_decisions') || '[]');
+  if (existingDecisions.length === 0) {
+    const seededDecisions = [
+      {
+        id: 'dec-seed-001',
+        date: '2026-03-01',
+        decision: 'Declined all college placement opportunities to focus full-time on Malveon',
+        reason: 'Malveon requires founder-level attention. A placement job would cap the upside and split focus.',
+        decidedBy: 'Ladson',
+        domain: 'ops',
+        updatedAt: '2026-03-01T00:00:00Z'
+      },
+      {
+        id: 'dec-seed-002',
+        date: '2026-03-11',
+        decision: 'Stopped chasing perfection. Moved to action bias - ship rough > wait for polish',
+        reason: 'YC playbook pivot. Execution consistency gap identified. Whatever sparks in mind, execute it and message ICPs without waiting for polished product.',
+        decidedBy: 'Ladson',
+        domain: 'ops',
+        updatedAt: '2026-03-11T00:00:00Z'
+      },
+      {
+        id: 'dec-seed-003',
+        date: '2026-03-11',
+        decision: 'Revenue model: $99/month flat for paid pilots, then per-seat pricing at $15-40/contributor/month',
+        reason: 'Flat rate lowers entry barrier for first pilots. Per-seat scales with team growth once value is proven.',
+        decidedBy: 'Ladson + Kavin',
+        domain: 'finance',
+        updatedAt: '2026-03-11T00:00:00Z'
+      },
+      {
+        id: 'dec-seed-004',
+        date: '2026-03-11',
+        decision: 'ICP targeting priority: India-first (Series A/B, 20-60 engineers), then US/Europe',
+        reason: 'Same timezone for onboarding and support. No competition from US-focused tools yet. Lower cost per outreach.',
+        decidedBy: 'Ladson',
+        domain: 'sales',
+        updatedAt: '2026-03-11T00:00:00Z'
+      },
+      {
+        id: 'dec-seed-005',
+        date: '2026-03-22',
+        decision: 'Consolidated 3 scheduled tasks into 2: morning-prep + evening-post. Removed midday task.',
+        reason: 'Midday was too fragmented with college schedule. Morning and evening cover all outreach needs.',
+        decidedBy: 'Ladson',
+        domain: 'ops',
+        updatedAt: '2026-03-22T00:00:00Z'
+      },
+      {
+        id: 'dec-seed-006',
+        date: '2026-03-24',
+        decision: 'Removed Toplyne from ICP prospect queue',
+        reason: 'Toplyne shut down October 2024. Confirmed during prospecting research.',
+        decidedBy: 'Ladson',
+        domain: 'sales',
+        updatedAt: '2026-03-24T00:00:00Z'
+      },
+      {
+        id: 'dec-seed-007',
+        date: '2026-03-25',
+        decision: 'Morning deep work block removed for week of March 25-29 (real wake time 7 AM)',
+        reason: 'Honest reflection on actual wake time this week. Deep work moves to cyber lab free periods instead.',
+        decidedBy: 'Ladson',
+        domain: 'ops',
+        updatedAt: '2026-03-25T00:00:00Z'
+      },
+      {
+        id: 'dec-seed-008',
+        date: '2026-03-06',
+        decision: 'Company structure: Private Limited Company (not LLP or sole proprietorship)',
+        reason: 'Pvt Ltd required for raising investment, issuing ESOPs, and professional credibility with enterprise clients.',
+        decidedBy: 'Ladson + Kavin',
+        domain: 'legal',
+        updatedAt: '2026-03-06T00:00:00Z'
+      }
+    ];
+    decisions = seededDecisions;
+    localStorage.setItem('malveon_decisions', JSON.stringify(seededDecisions));
+    // Push to Supabase if online (will queue if not)
+    seededDecisions.forEach(d => pushDecisionToSupabase(d));
+  }
+
+  // --- DELEGATIONS ---
+  const existingDelegations = JSON.parse(localStorage.getItem(DELEGATIONS_KEY) || '[]');
+  if (existingDelegations.length === 0) {
+    const seededDelegations = [
+      {
+        id: 'del-seed-001',
+        task: 'Build Malveon demo (product prototype)',
+        assignedTo: 'Kavin',
+        assignedDate: '2026-03-06',
+        dueDate: '2026-04-15',
+        status: 'in-progress',
+        notes: 'Demo-ready target mid-April 2026. Waiting on build date confirmation since Mar 6. Kavin builds fast with vibe coding if given proper implementation doc.',
+        updatedAt: '2026-03-06T00:00:00Z'
+      },
+      {
+        id: 'del-seed-002',
+        task: 'Mock discovery call - play Engineering Manager (25-person SaaS team)',
+        assignedTo: 'Kavin',
+        assignedDate: '2026-03-23',
+        dueDate: '2026-03-27',
+        status: 'not-started',
+        notes: 'Thursday March 27. 30 min mock call. Kavin plays engineering lead. Ladson asks 5 questions. Do not pitch.',
+        updatedAt: '2026-03-23T00:00:00Z'
+      }
+    ];
+    delegations = seededDelegations;
+    localStorage.setItem(DELEGATIONS_KEY, JSON.stringify(seededDelegations));
+    seededDelegations.forEach(d => pushDelegationToSupabase(d));
+  }
+
+  localStorage.setItem('malveon_workspace_seeded_v1', 'true');
 }
 
 function calcOkrProgressPercent(okr) {
