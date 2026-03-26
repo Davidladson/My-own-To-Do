@@ -40,6 +40,7 @@ let insights = [];
 let decisions = [];
 let delegations = [];
 let recurringTasks = [];
+let editingDecisionId = null; // Track editing decision ID
 
 // V3 Data arrays
 let outreach_logs = [];
@@ -5048,7 +5049,13 @@ function renderDecisionsV2() {
         <div class="v2-task-content" style="flex:1;">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
             <div class="v2-task-text" style="font-size:15px; font-weight:700; color:${color800}; line-height:1.4; flex:1;">${esc(d.decision)}</div>
-            <span style="font-size:10px; padding:3px 8px; border-radius:999px; background:${color600}; color:#fff; white-space:nowrap; margin-left:8px;">${d.domain || 'ops'}</span>
+            <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
+              <span style="font-size:10px; padding:3px 8px; border-radius:999px; background:${color600}; color:#fff; white-space:nowrap;">${d.domain || 'ops'}</span>
+              <div style="display:flex; gap:8px;">
+                <button onclick="openEditDecisionModal('${d.id}')" style="background:none; border:none; color:var(--accent); font-size:11px; font-weight:700; cursor:pointer; padding:0;">Edit</button>
+                <button onclick="deleteDecision('${d.id}')" style="background:none; border:none; color:var(--red); font-size:11px; font-weight:700; cursor:pointer; padding:0;">Delete</button>
+              </div>
+            </div>
           </div>
           ${d.reason ? `<div style="font-size:12px; color:var(--text-dim); margin-bottom:6px; line-height:1.5;"><strong>Why:</strong> ${esc(d.reason)}</div>` : ''}
           <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-muted);">
@@ -5064,9 +5071,26 @@ function renderDecisionsV2() {
 }
 
 function openDecisionModal() {
+  editingDecisionId = null;
+  document.getElementById('decisionTitle').textContent = 'Log Decision';
+  document.getElementById('decisionSaveBtn').textContent = 'Save';
   document.getElementById('decisionInput').value = '';
   document.getElementById('decisionReasonInput').value = '';
   document.getElementById('decisionDomainInput').value = 'ops';
+  document.getElementById('decisionDecidedByInput').value = 'Ladson';
+  document.getElementById('decisionModal').classList.add('open');
+}
+
+function openEditDecisionModal(id) {
+  const d = decisions.find(x => x.id === id);
+  if (!d) return;
+  editingDecisionId = id;
+  document.getElementById('decisionTitle').textContent = 'Edit Decision';
+  document.getElementById('decisionSaveBtn').textContent = 'Update';
+  document.getElementById('decisionInput').value = d.decision || '';
+  document.getElementById('decisionReasonInput').value = d.reason || '';
+  document.getElementById('decisionDomainInput').value = d.domain || 'ops';
+  document.getElementById('decisionDecidedByInput').value = d.decidedBy || 'Ladson';
   document.getElementById('decisionModal').classList.add('open');
 }
 
@@ -5075,22 +5099,61 @@ function closeDecisionModal() {
 }
 
 function saveDecision() {
-  const decision = document.getElementById('decisionInput').value.trim();
-  if (!decision) return;
-  const d = {
-    id: 'dec-' + Date.now(),
-    date: todayStr(),
-    decision: decision,
-    reason: document.getElementById('decisionReasonInput').value.trim(),
-    decidedBy: document.getElementById('decisionDecidedByInput')?.value || 'Ladson',
-    domain: document.getElementById('decisionDomainInput').value,
-    updatedAt: new Date().toISOString()
-  };
-  decisions.push(d);
-  localStorage.setItem('malveon_decisions', JSON.stringify(decisions));
-  pushDecisionToSupabase(d);
+  const decisionText = document.getElementById('decisionInput').value.trim();
+  if (!decisionText) return;
+
+  if (editingDecisionId) {
+    const d = decisions.find(x => x.id === editingDecisionId);
+    if (d) {
+      d.decision = decisionText;
+      d.reason = document.getElementById('decisionReasonInput').value.trim();
+      d.domain = document.getElementById('decisionDomainInput').value;
+      d.decidedBy = document.getElementById('decisionDecidedByInput').value;
+      d.updatedAt = new Date().toISOString();
+      localStorage.setItem('malveon_decisions', JSON.stringify(decisions));
+      pushDecisionToSupabase(d);
+    }
+  } else {
+    const d = {
+      id: 'dec-' + Date.now(),
+      date: todayStr(),
+      decision: decisionText,
+      reason: document.getElementById('decisionReasonInput').value.trim(),
+      decidedBy: document.getElementById('decisionDecidedByInput')?.value || 'Ladson',
+      domain: document.getElementById('decisionDomainInput').value,
+      updatedAt: new Date().toISOString()
+    };
+    decisions.push(d);
+    localStorage.setItem('malveon_decisions', JSON.stringify(decisions));
+    pushDecisionToSupabase(d);
+  }
   closeDecisionModal();
   renderDecisionsV2();
+}
+
+function deleteDecision(id) {
+  if (!confirm('Are you sure you want to delete this decision?')) return;
+  const index = decisions.findIndex(x => x.id === id);
+  if (index !== -1) {
+    const d = decisions[index];
+    decisions.splice(index, 1);
+    localStorage.setItem('malveon_decisions', JSON.stringify(decisions));
+    
+    // Sync deletion to Supabase
+    if (currentUser && sb) {
+      if (navigator.onLine) {
+        sb.from('decisions').delete().eq('id', id).then(({ error }) => {
+          if (error) {
+            console.log('Delete decision error:', error);
+            queueChange('decisions', 'delete', { id });
+          }
+        });
+      } else {
+        queueChange('decisions', 'delete', { id });
+      }
+    }
+    renderDecisionsV2();
+  }
 }
 
 // ===================== V2 DELEGATION SCREEN =====================

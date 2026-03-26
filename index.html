@@ -467,7 +467,7 @@
   <!-- Decision Modal -->
   <div class="modal-overlay" id="decisionModal" onclick="if(event.target===this)closeDecisionModal()">
     <div class="modal">
-      <h2>Log Decision</h2>
+      <h2 id="decisionTitle">Log Decision</h2>
       <label>Decision</label>
       <input type="text" id="decisionInput" placeholder="What was decided?">
       <label>Reasoning</label>
@@ -495,7 +495,7 @@
       </select>
       <div class="modal-actions">
         <button class="btn-cancel" onclick="closeDecisionModal()">Cancel</button>
-        <button class="btn-save" onclick="saveDecision()">Save</button>
+        <button class="btn-save" id="decisionSaveBtn" onclick="saveDecision()">Save</button>
       </div>
     </div>
   </div>
