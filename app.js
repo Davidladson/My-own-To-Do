@@ -1720,6 +1720,7 @@ async function initApp() {
     deletedTaskTexts = new Set();
   }
 
+  migrateSeededStringIds();
   seedWorkspaceData();
   checkDayReset();
   updateDate();
@@ -2311,6 +2312,54 @@ function calculateWeeklyAverage() {
   return Math.round(totalTasksDone / weeks);
 }
 
+// ===================== SEED UUID MIGRATION (runs once) =====================
+function migrateSeededStringIds() {
+  if (localStorage.getItem('malveon_seed_uuid_migrated')) return;
+
+  // Fix decisions with invalid string IDs
+  let decs = JSON.parse(localStorage.getItem('malveon_decisions') || '[]');
+  let decsMigrated = false;
+  decs = decs.map(d => {
+    if (d.id && d.id.startsWith('dec-seed-')) {
+      decsMigrated = true;
+      return Object.assign({}, d, { id: crypto.randomUUID() });
+    }
+    return d;
+  });
+  if (decsMigrated) {
+    decisions = decs;
+    localStorage.setItem('malveon_decisions', JSON.stringify(decs));
+    decs.forEach(d => pushDecisionToSupabase(d));
+  }
+
+  // Fix delegations with invalid string IDs
+  let dels = JSON.parse(localStorage.getItem(DELEGATIONS_KEY) || '[]');
+  let delsMigrated = false;
+  dels = dels.map(d => {
+    if (d.id && d.id.startsWith('del-seed-')) {
+      delsMigrated = true;
+      return Object.assign({}, d, { id: crypto.randomUUID() });
+    }
+    return d;
+  });
+  if (delsMigrated) {
+    delegations = dels;
+    localStorage.setItem(DELEGATIONS_KEY, JSON.stringify(dels));
+    dels.forEach(d => pushDelegationToSupabase(d));
+  }
+
+  // Remove the failed queue entries for old string IDs
+  let queue = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]');
+  const before = queue.length;
+  queue = queue.filter(q => {
+    if (q.data && q.data.id && (String(q.data.id).startsWith('dec-seed-') || String(q.data.id).startsWith('del-seed-'))) return false;
+    return true;
+  });
+  if (queue.length !== before) localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+
+  localStorage.setItem('malveon_seed_uuid_migrated', 'true');
+}
+
 // ===================== WORKSPACE SEED (runs once) =====================
 function seedWorkspaceData() {
   if (localStorage.getItem('malveon_workspace_seeded_v1')) return;
@@ -2334,7 +2383,7 @@ function seedWorkspaceData() {
   if (existingDecisions.length === 0) {
     const seededDecisions = [
       {
-        id: 'dec-seed-001',
+        id: crypto.randomUUID(),
         date: '2026-03-01',
         decision: 'Declined all college placement opportunities to focus full-time on Malveon',
         reason: 'Malveon requires founder-level attention. A placement job would cap the upside and split focus.',
@@ -2343,7 +2392,7 @@ function seedWorkspaceData() {
         updatedAt: '2026-03-01T00:00:00Z'
       },
       {
-        id: 'dec-seed-002',
+        id: crypto.randomUUID(),
         date: '2026-03-11',
         decision: 'Stopped chasing perfection. Moved to action bias - ship rough > wait for polish',
         reason: 'YC playbook pivot. Execution consistency gap identified. Whatever sparks in mind, execute it and message ICPs without waiting for polished product.',
@@ -2352,7 +2401,7 @@ function seedWorkspaceData() {
         updatedAt: '2026-03-11T00:00:00Z'
       },
       {
-        id: 'dec-seed-003',
+        id: crypto.randomUUID(),
         date: '2026-03-11',
         decision: 'Revenue model: $99/month flat for paid pilots, then per-seat pricing at $15-40/contributor/month',
         reason: 'Flat rate lowers entry barrier for first pilots. Per-seat scales with team growth once value is proven.',
@@ -2361,7 +2410,7 @@ function seedWorkspaceData() {
         updatedAt: '2026-03-11T00:00:00Z'
       },
       {
-        id: 'dec-seed-004',
+        id: crypto.randomUUID(),
         date: '2026-03-26',
         decision: 'ICP targeting priority: US/UK first (Series A/B, 20-60 engineers), then India',
         reason: 'Largest market with highest willingness to pay. US/UK EMs respond faster to cold outreach and have budget authority. India secondary.',
@@ -2370,7 +2419,7 @@ function seedWorkspaceData() {
         updatedAt: '2026-03-26T00:00:00Z'
       },
       {
-        id: 'dec-seed-005',
+        id: crypto.randomUUID(),
         date: '2026-03-22',
         decision: 'Consolidated 3 scheduled tasks into 2: morning-prep + evening-post. Removed midday task.',
         reason: 'Midday was too fragmented with college schedule. Morning and evening cover all outreach needs.',
@@ -2379,7 +2428,7 @@ function seedWorkspaceData() {
         updatedAt: '2026-03-22T00:00:00Z'
       },
       {
-        id: 'dec-seed-006',
+        id: crypto.randomUUID(),
         date: '2026-03-24',
         decision: 'Removed Toplyne from ICP prospect queue',
         reason: 'Toplyne shut down October 2024. Confirmed during prospecting research.',
@@ -2388,7 +2437,7 @@ function seedWorkspaceData() {
         updatedAt: '2026-03-24T00:00:00Z'
       },
       {
-        id: 'dec-seed-007',
+        id: crypto.randomUUID(),
         date: '2026-03-25',
         decision: 'Morning deep work block removed for week of March 25-29 (real wake time 7 AM)',
         reason: 'Honest reflection on actual wake time this week. Deep work moves to cyber lab free periods instead.',
@@ -2397,7 +2446,7 @@ function seedWorkspaceData() {
         updatedAt: '2026-03-25T00:00:00Z'
       },
       {
-        id: 'dec-seed-008',
+        id: crypto.randomUUID(),
         date: '2026-03-06',
         decision: 'Company structure: Private Limited Company (not LLP or sole proprietorship)',
         reason: 'Pvt Ltd required for raising investment, issuing ESOPs, and professional credibility with enterprise clients.',
@@ -2417,7 +2466,7 @@ function seedWorkspaceData() {
   if (existingDelegations.length === 0) {
     const seededDelegations = [
       {
-        id: 'del-seed-001',
+        id: crypto.randomUUID(),
         task: 'Build Malveon demo (product prototype)',
         assignedTo: 'Kavin',
         assignedDate: '2026-03-06',
@@ -2427,7 +2476,7 @@ function seedWorkspaceData() {
         updatedAt: '2026-03-06T00:00:00Z'
       },
       {
-        id: 'del-seed-002',
+        id: crypto.randomUUID(),
         task: 'Mock discovery call - play Engineering Manager (25-person SaaS team)',
         assignedTo: 'Kavin',
         assignedDate: '2026-03-23',
@@ -7727,99 +7776,4 @@ function saveWeeklyReview() {
     weekStart: monday,
     savedAt: new Date().toISOString(),
     wins: document.getElementById('wr-wins')?.value.trim() || '',
-    failures: document.getElementById('wr-failures')?.value.trim() || '',
-    outreachSent: parseInt(document.getElementById('wr-outreach-sent')?.value) || 0,
-    outreachReplies: parseInt(document.getElementById('wr-outreach-replies')?.value) || 0,
-    callsBooked: parseInt(document.getElementById('wr-calls-booked')?.value) || 0,
-    pilots: parseInt(document.getElementById('wr-pilots')?.value) || 0,
-    energy: parseInt(document.getElementById('wr-energy')?.value) || 3,
-    focus: parseInt(document.getElementById('wr-focus')?.value) || 3,
-    exec: parseInt(document.getElementById('wr-exec')?.value) || 3,
-    health: document.getElementById('wr-health')?.value.trim() || '',
-    next1: document.getElementById('wr-next1')?.value.trim() || '',
-    next2: document.getElementById('wr-next2')?.value.trim() || '',
-    next3: document.getElementById('wr-next3')?.value.trim() || '',
-    stop: document.getElementById('wr-stop')?.value.trim() || '',
-    score: parseInt(document.getElementById('wr-score')?.value) || 7,
-    selfFeedback: document.getElementById('wr-self-feedback')?.value.trim() || '',
-  };
-
-  const all = JSON.parse(localStorage.getItem(WEEKLY_REVIEWS_KEY) || '[]');
-  const idx = all.findIndex(r => r.weekStart === monday);
-  if (idx >= 0) all[idx] = review; else all.push(review);
-  localStorage.setItem(WEEKLY_REVIEWS_KEY, JSON.stringify(all));
-
-  // Also set the OKR for next week from the top 3
-  if (review.next1) {
-    const nextMonday = getMondayStr(1);
-    const existing = JSON.parse(localStorage.getItem(OKR_KEY) || 'null');
-    if (!existing || existing.weekStart !== nextMonday) {
-      const nextOkr = { weekStart: nextMonday, one: review.next1, bonus1: review.next2, bonus2: review.next3 };
-      localStorage.setItem(OKR_KEY, JSON.stringify(nextOkr));
-    }
-  }
-
-  closeWeeklyReviewModal();
-  showToast('Weekly review saved!', 'success');
-  renderReviewV2();
-}
-
-function renderWeeklyReviews() {
-  const all = JSON.parse(localStorage.getItem(WEEKLY_REVIEWS_KEY) || '[]');
-  return all.sort((a, b) => b.weekStart.localeCompare(a.weekStart));
-}
-
-// ===================== PHASE 5.2 & 5.3 RELIABILITY =====================
-function saveEmailFallback() {
-    const val = document.getElementById('emailFallbackInput').value.trim();
-    localStorage.setItem('EMAIL_FALLBACK', val);
-    const status = document.getElementById('tokenRefreshStatus');
-    if (status) { status.textContent = 'Email saved!'; status.style.display = 'block'; setTimeout(()=>status.style.display='none', 2000); }
-}
-
-async function refreshAndCopyToken() {
-  if (!sb) return;
-  const { data, error } = await sb.auth.refreshSession();
-  if (error) { alert('Refresh failed: ' + error.message); return; }
-  
-  if (data?.session) {
-    navigator.clipboard.writeText(data.session.access_token);
-    const status = document.getElementById('tokenRefreshStatus');
-    if (status) { status.style.display = 'block'; setTimeout(()=>status.style.display='none', 3000); }
-    renderSync();
-  }
-}
-
-async function checkTaskHeartbeat() {
-  if (!workspaceDirHandle) return;
-  try {
-    const outreachDirHb = await workspaceDirHandle.getDirectoryHandle('outreach');
-    const trackersDirHb = await outreachDirHb.getDirectoryHandle('trackers');
-    const fileHandle = await trackersDirHb.getFileHandle('task-heartbeat.json');
-    const file = await fileHandle.getFile();
-    const content = await file.text();
-    const data = JSON.parse(content);
-    
-    // If last_run was more than 24h ago
-    const lastRun = new Date(data.last_run);
-    const diffHours = (new Date() - lastRun) / (1000 * 60 * 60);
-    
-    if (diffHours > 24) {
-      showToast('⚠️ Scheduled tasks (Claude) may be stalled. Last run: ' + data.last_run, 'error');
-    }
-  } catch (e) {
-    // Silently skip if file doesn't exist yet
-  }
-}
-
-// Background token refresh every 50 mins
-setInterval(async () => {
-    if (sb && currentUser) {
-        await sb.auth.refreshSession();
-        console.log('Session token refreshed automatically');
-    }
-}, 50 * 60 * 1000);
-
-// ===================== START =====================
-startApp();
-
+    failures: document.getElemen
