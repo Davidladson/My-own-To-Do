@@ -1686,6 +1686,26 @@ async function initApp() {
   resources = JSON.parse(localStorage.getItem(RESOURCES_KEY) || '[]');
   decisions = JSON.parse(localStorage.getItem('malveon_decisions') || '[]');
   delegations = JSON.parse(localStorage.getItem(DELEGATIONS_KEY) || '[]');
+
+  // ID Migration for Decisions/Delegations (ensuring valid UUIDs for Supabase)
+  let migratedV2 = false;
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  decisions.forEach(d => {
+    if (!uuidRegex.test(d.id)) {
+      d.id = uuidv4();
+      migratedV2 = true;
+    }
+  });
+  delegations.forEach(d => {
+    if (!uuidRegex.test(d.id)) {
+      d.id = uuidv4();
+      migratedV2 = true;
+    }
+  });
+  if (migratedV2) {
+    localStorage.setItem('malveon_decisions', JSON.stringify(decisions));
+    localStorage.setItem(DELEGATIONS_KEY, JSON.stringify(delegations));
+  }
   // V2/V3: offline fallback - load from localStorage before Supabase sync arrives
   prospects = JSON.parse(localStorage.getItem('malveon_prospects') || '[]');
   pilots = JSON.parse(localStorage.getItem('malveon_pilots') || '[]');
@@ -5072,26 +5092,47 @@ function renderDecisionsV2() {
 
 function openDecisionModal() {
   editingDecisionId = null;
-  document.getElementById('decisionTitle').textContent = 'Log Decision';
-  document.getElementById('decisionSaveBtn').textContent = 'Save';
-  document.getElementById('decisionInput').value = '';
-  document.getElementById('decisionReasonInput').value = '';
-  document.getElementById('decisionDomainInput').value = 'ops';
-  document.getElementById('decisionDecidedByInput').value = 'Ladson';
-  document.getElementById('decisionModal').classList.add('open');
+  const titleEl = document.getElementById('decisionTitle');
+  const saveBtnEl = document.getElementById('decisionSaveBtn');
+  if (titleEl) titleEl.textContent = 'Log Decision';
+  if (saveBtnEl) saveBtnEl.textContent = 'Save';
+  
+  const inputEl = document.getElementById('decisionInput');
+  const reasonEl = document.getElementById('decisionReasonInput');
+  const domainEl = document.getElementById('decisionDomainInput');
+  const decidedByEl = document.getElementById('decisionDecidedByInput');
+  
+  if (inputEl) inputEl.value = '';
+  if (reasonEl) reasonEl.value = '';
+  if (domainEl) domainEl.value = 'ops';
+  if (decidedByEl) decidedByEl.value = 'Ladson';
+  
+  const modalEl = document.getElementById('decisionModal');
+  if (modalEl) modalEl.classList.add('open');
 }
 
 function openEditDecisionModal(id) {
   const d = decisions.find(x => x.id === id);
   if (!d) return;
   editingDecisionId = id;
-  document.getElementById('decisionTitle').textContent = 'Edit Decision';
-  document.getElementById('decisionSaveBtn').textContent = 'Update';
-  document.getElementById('decisionInput').value = d.decision || '';
-  document.getElementById('decisionReasonInput').value = d.reason || '';
-  document.getElementById('decisionDomainInput').value = d.domain || 'ops';
-  document.getElementById('decisionDecidedByInput').value = d.decidedBy || 'Ladson';
-  document.getElementById('decisionModal').classList.add('open');
+  
+  const titleEl = document.getElementById('decisionTitle');
+  const saveBtnEl = document.getElementById('decisionSaveBtn');
+  if (titleEl) titleEl.textContent = 'Edit Decision';
+  if (saveBtnEl) saveBtnEl.textContent = 'Update';
+  
+  const inputEl = document.getElementById('decisionInput');
+  const reasonEl = document.getElementById('decisionReasonInput');
+  const domainEl = document.getElementById('decisionDomainInput');
+  const decidedByEl = document.getElementById('decisionDecidedByInput');
+  
+  if (inputEl) inputEl.value = d.decision || '';
+  if (reasonEl) reasonEl.value = d.reason || '';
+  if (domainEl) domainEl.value = d.domain || 'ops';
+  if (decidedByEl) decidedByEl.value = d.decidedBy || 'Ladson';
+  
+  const modalEl = document.getElementById('decisionModal');
+  if (modalEl) modalEl.classList.add('open');
 }
 
 function closeDecisionModal() {
@@ -5115,7 +5156,7 @@ function saveDecision() {
     }
   } else {
     const d = {
-      id: 'dec-' + Date.now(),
+      id: uuidv4(),
       date: todayStr(),
       decision: decisionText,
       reason: document.getElementById('decisionReasonInput').value.trim(),
@@ -5256,7 +5297,7 @@ function saveDelegation() {
   const assignee = document.getElementById('delegationAssigneeInput').value.trim();
   if (!task || !assignee) return;
   const d = {
-    id: 'del-' + Date.now(),
+    id: uuidv4(),
     task: task,
     assignedTo: assignee,
     assignedDate: todayStr(),
