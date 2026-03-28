@@ -41,6 +41,7 @@ let decisions = [];
 let delegations = [];
 let recurringTasks = [];
 let editingDecisionId = null; // Track editing decision ID
+let editingPilotId = null;    // Track editing pilot ID
 
 // V3 Data arrays
 let outreach_logs = [];
@@ -420,7 +421,7 @@ function renderScreen() {
     return;
   }
 
-  // Phase 2: V3 Domains Screen
+  // Phase 2/19: V2 Domains Screen
   if (legacy === 'domains') {
     activeTab = 'domains';
     document.getElementById('taskList').innerHTML = '';
@@ -428,7 +429,7 @@ function renderScreen() {
     document.getElementById('playbookSection').style.display = 'none';
     document.getElementById('remindersSection').style.display = 'none';
     document.getElementById('reviewPrompt').innerHTML = '';
-    renderDomainView();
+    renderDomains();
     return;
   }
 
@@ -626,18 +627,6 @@ function renderScreen() {
     return;
   }
 
-  // Phase 19: V2 Domains Screen
-  if (legacy === 'domains') {
-    activeTab = 'domains';
-    document.getElementById('taskList').innerHTML = '';
-    document.getElementById('syncSection').style.display = 'none';
-    document.getElementById('playbookSection').style.display = 'none';
-    document.getElementById('remindersSection').style.display = 'none';
-    document.getElementById('reviewPrompt').innerHTML = '';
-    renderDomains();
-    return;
-  }
-
   // Phase 19: V2 Workload Screen
   if (legacy === 'workload') {
     activeTab = 'workload';
@@ -721,7 +710,7 @@ function sanitizeText(str) {
   return String(str).slice(0, 5000); // cap runaway strings
 }
 // Validate allowed enum values before sending to Supabase
-const ALLOWED_CATS = new Set(['today','this-week','before-pilot','waiting','someday','done']);
+const ALLOWED_CATS = new Set(['today','daily-habits','this-week','before-pilot','waiting','someday','done','inbox','recurring','reminders']);
 const ALLOWED_DOMAINS = new Set(['product','sales','ops','engineering','legal','finance','hr','fundraising','marketing','customer-success','banking','international']);
 const ALLOWED_STATUSES = new Set(['not-started','in-progress','done','on-hold']);
 function safeEnum(value, allowed, fallback) {
@@ -908,8 +897,13 @@ function rowToTask(r) {
 }
 
 function logToRow(entry) {
+  // Ensure the log entry has a real UUID. If it doesn't, generate and persist one.
+  if (!entry.id || !isValidUUID(entry.id)) {
+    entry.id = uuidv4();
+    saveDailyLog(); // persist so the same UUID is reused on next sync
+  }
   return {
-    id: entry.id || entry.date,
+    id: entry.id,
     user_id: currentUser.id,
     date: entry.date,
     score: entry.score || 0,
@@ -1325,8 +1319,9 @@ async function syncFromSupabase() {
       if (localOrphans.length > 0) {
         // If we have local orphans, AND we are online, check if these tasks were created *after* the last sync.
         // If they are older tasks that just vanished from the DB, it means they were deleted elsewhere!
-        const tenMinutesAgo = new Date(Date.now() - 10 * 60000).toISOString();
-        const staleOrphans = localOrphans.filter(t => t.updatedAt < tenMinutesAgo);
+        // Use 48h window — 10min was too aggressive and deleted valid offline-created tasks
+        const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60000).toISOString();
+        const staleOrphans = localOrphans.filter(t => t.updatedAt < twoDaysAgo);
 
         if (staleOrphans.length > 0) {
           // Remove stale orphans locally
@@ -1354,31 +1349,18 @@ async function syncFromSupabase() {
         }
       });
 
-      // 4. Push genuinely new offline local tasks to remote
-      const existingTexts = new Set();
-      tasks.forEach(t => {
-        if (remoteMap[t.id]) existingTexts.add(t.text.trim().toLowerCase());
-      });
-
-      const localOnlyToRemove = [];
+      // 4. Push genuinely new offline local tasks to remote (by ID — not by text match)
+      // Text-based dedup was removed: it incorrectly deleted local tasks whose text happened
+      // to match a remote task, even if they were different tasks. Use the "Remove Duplicates"
+      // button in the Sync tab for intentional dedup.
       for (const t of tasks) {
         if (!remoteMap[t.id]) {
-          const textKey = t.text.trim().toLowerCase();
-          if (existingTexts.has(textKey)) {
-            localOnlyToRemove.push(t.id);
-          } else {
-            existingTexts.add(textKey);
-            t.updatedAt = t.updatedAt || new Date().toISOString();
-            const row = taskToRow(t);
-            await sb.from('tasks').upsert(row, { onConflict: 'id' }).then(({ error }) => {
-              if (error) console.log('Migration push error:', error);
-            });
-          }
+          t.updatedAt = t.updatedAt || new Date().toISOString();
+          const row = taskToRow(t);
+          await sb.from('tasks').upsert(row, { onConflict: 'id' }).then(({ error }) => {
+            if (error) console.log('Migration push error:', error);
+          });
         }
-      }
-
-      if (localOnlyToRemove.length > 0) {
-        tasks = tasks.filter(t => !localOnlyToRemove.includes(t.id));
       }
 
       localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
@@ -1888,17 +1870,22 @@ function checkDayReset() {
     // Generate Recurring Tasks
     generateRecurringTasks(today);
 
-    // Auto-clear / Archive OKR on new week (Monday)
+    // Auto-clear / Archive OKR when a new week has started (any day, not just Monday)
     const okrStr = localStorage.getItem(OKR_KEY);
     if (okrStr) {
       const okr = JSON.parse(okrStr);
       const currentMonday = getMondayOfCurrentWeek();
-      if (okr.weekStart !== currentMonday && new Date().getDay() === 1) {
-        let entry = dailyLog.find(e => e.date === lastReset || e.date === today);
-        if (entry) {
-          entry.okr = okr;
-          saveDailyLog();
+      if (okr.weekStart && okr.weekStart !== currentMonday) {
+        // Archive to the last day of the old week (okr.weekStart + 6 days), or today, whichever log entry exists
+        const archiveDate = lastReset || today;
+        let entry = dailyLog.find(e => e.date === archiveDate);
+        if (!entry) {
+          // Create the entry if it doesn't exist so the OKR isn't lost
+          entry = { id: uuidv4(), date: archiveDate, score: 0, done: 0, total: 0, tasks: [], review: null };
+          dailyLog.push(entry);
         }
+        entry.okr = okr;
+        saveDailyLog();
         localStorage.removeItem(OKR_KEY);
       }
     }
@@ -1927,8 +1914,11 @@ function autoSaveSnapshot() {
   entry.tasks = todayTasks.map(t => ({ text: t.text, done: t.done }));
   entry.lastUpdated = new Date().toISOString();
 
-  // Keep last 90 days
-  if (dailyLog.length > 90) dailyLog = dailyLog.slice(-90);
+  // Keep last 90 days — sort first so we drop the oldest, not the last-inserted
+  if (dailyLog.length > 90) {
+    dailyLog.sort((a, b) => b.date.localeCompare(a.date));
+    dailyLog = dailyLog.slice(0, 90);
+  }
   saveDailyLog();
   pushLogToSupabase(entry);
 }
@@ -2045,9 +2035,9 @@ function getAllAlerts() {
   }
 
   // 2. Compliance Action Required
-  const overdueCompliance = tasks.filter(t => t.cat === 'compliance' && !t.done && calcComplianceDueDate(t).isOverdue);
-  if (overdueCompliance.length > 0) {
-    alerts.push({ type: 'urgent', text: `Urgent: ${overdueCompliance.length} compliance item${overdueCompliance.length > 1 ? 's' : ''} overdue.` });
+  const overdueComplianceCount = getComplianceOverdueCount();
+  if (overdueComplianceCount > 0) {
+    alerts.push({ type: 'urgent', text: `Urgent: ${overdueComplianceCount} compliance item${overdueComplianceCount > 1 ? 's' : ''} overdue.` });
   }
 
   // 3. Blocked Delegations
@@ -2251,7 +2241,9 @@ function renderToday() {
 
 // ===================== V2 HABITS SCREEN =====================
 function renderHabits() {
-  const habits = tasks.filter(t => t.daily);
+  // Only show tasks whose category IS daily-habits — not all tasks with daily:true,
+  // since 'today' tasks also have daily:true and would duplicate across both tabs.
+  const habits = tasks.filter(t => t.cat === 'daily-habits');
   const doneCount = habits.filter(t => t.done).length;
   const totalCount = habits.length;
 
@@ -2791,7 +2783,7 @@ function generateRecurringTasks(todayStr) {
     // Generate if due
     if (rt.nextRunDate <= todayStr && rt.lastGeneratedDate !== todayStr) {
       const newTask = {
-        id: uid(), text: rt.title, cat: rt.targetCat || 'today',
+        id: uuidv4(), text: rt.title, cat: rt.targetCat || 'today',
         priority: rt.priority || 'medium', done: false, notes: '',
         createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
       };
@@ -2878,7 +2870,7 @@ function saveRecurringTask() {
     if (active) rt.nextRunDate = calcNextRunDate(rt, new Date().toISOString().split('T')[0]);
   } else {
     rt = {
-      id: uid(), title, frequency, targetCat, priority, active,
+      id: uuidv4(), title, frequency, targetCat, priority, active,
       daysOfWeek, dayOfMonth, monthOfYear: null, eventTrigger: null,
       lastGeneratedDate: null, 
       updatedAt: new Date().toISOString()
@@ -2916,7 +2908,7 @@ function forceTriggerRecurring(e, id) {
   let rt = recurringTasks.find(r => r.id === id);
   if (rt) {
     const newTask = {
-      id: uid(), text: rt.title, cat: rt.targetCat || 'today',
+      id: uuidv4(), text: rt.title, cat: rt.targetCat || 'today',
       priority: rt.priority || 'medium', done: false, notes: 'Manually triggered',
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
     };
@@ -3531,7 +3523,7 @@ function closeProspectModal() {
 }
 
 function saveProspect() {
-    const id = document.getElementById('prospectIdInput').value || uid();
+    const id = document.getElementById('prospectIdInput').value || uuidv4();
     const p = {
         id,
         name: document.getElementById('prospectNameInput').value.trim(),
@@ -3634,16 +3626,14 @@ function updateProspectStatus(id, status) {
     renderPipeline();
 }
 
-function pushProspectToSupabase(p) {
-    p.updatedAt = new Date().toISOString();
-    localStorage.setItem('malveon_prospects', JSON.stringify(prospects));
-    if (sb && currentUser) {
-        sb.from('prospects').upsert(prospectToRow(p)).then();
-    }
-}
-
 // Pilot Handlers
 function openAddPilotModal() {
+    editingPilotId = null;
+    // Clear form fields for a fresh add
+    ['pilotCompanyInput','pilotContactNameInput','pilotContactEmailInput','pilotStartDateInput','pilotMetricInput','pilotMrrInput'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
     document.getElementById('pilotModal').classList.add('open');
 }
 
@@ -3652,23 +3642,41 @@ function closePilotModal() {
 }
 
 function savePilot() {
-    const p = {
-        id: uid(),
-        company: document.getElementById('pilotCompanyInput').value.trim(),
-        contactName: document.getElementById('pilotContactNameInput').value.trim(),
-        contactEmail: document.getElementById('pilotContactEmailInput').value.trim(),
-        startDate: document.getElementById('pilotStartDateInput').value,
-        successMetric: document.getElementById('pilotMetricInput').value.trim(),
-        mrrUsd: parseInt(document.getElementById('pilotMrrInput').value) || 99,
-        health: 'green',
-        onboardingStatus: 'Not Started',
-        onboardingItems: [],
-        updatedAt: new Date().toISOString()
-    };
+    const company = document.getElementById('pilotCompanyInput').value.trim();
+    if (!company) return alert('Company name is required');
 
-    if (!p.company) return alert('Company name is required');
-    pilots.push(p);
-    pushPilotToSupabase(p);
+    if (editingPilotId) {
+        // Edit existing pilot
+        const existing = pilots.find(x => x.id === editingPilotId);
+        if (existing) {
+            existing.company = company;
+            existing.contactName = document.getElementById('pilotContactNameInput').value.trim();
+            existing.contactEmail = document.getElementById('pilotContactEmailInput').value.trim();
+            existing.startDate = document.getElementById('pilotStartDateInput').value;
+            existing.successMetric = document.getElementById('pilotMetricInput').value.trim();
+            existing.mrrUsd = parseInt(document.getElementById('pilotMrrInput').value) || 99;
+            existing.updatedAt = new Date().toISOString();
+            pushPilotToSupabase(existing);
+        }
+        editingPilotId = null;
+    } else {
+        // Create new pilot
+        const p = {
+            id: uuidv4(),
+            company,
+            contactName: document.getElementById('pilotContactNameInput').value.trim(),
+            contactEmail: document.getElementById('pilotContactEmailInput').value.trim(),
+            startDate: document.getElementById('pilotStartDateInput').value,
+            successMetric: document.getElementById('pilotMetricInput').value.trim(),
+            mrrUsd: parseInt(document.getElementById('pilotMrrInput').value) || 99,
+            health: 'green',
+            onboardingStatus: 'Not Started',
+            onboardingItems: [],
+            updatedAt: new Date().toISOString()
+        };
+        pilots.push(p);
+        pushPilotToSupabase(p);
+    }
     closePilotModal();
     renderPilots();
 }
@@ -3684,7 +3692,7 @@ function closeInsightModal() {
 
 function saveInsight() {
     const i = {
-        id: uid(),
+        id: uuidv4(),
         quote: document.getElementById('insightQuoteInput').value.trim(),
         contactName: document.getElementById('insightContactInput').value.trim(),
         company: document.getElementById('insightCompanyInput').value.trim(),
@@ -4206,8 +4214,7 @@ function saveReview() {
   }
   entry.review = review;
   saveDailyLog();
-  autoSaveSnapshot();
-  pushLogToSupabase(entry);
+  autoSaveSnapshot(); // computes real score, saves to localStorage, and pushes to Supabase
   closeReviewModal();
   checkReviewPrompt();
 }
@@ -4241,7 +4248,8 @@ function toggleTask(id) {
 
 // ===================== PROGRESS =====================
 function updateProgress() {
-  const total = tasks.filter(t => !t.daily || t.cat === 'today').length;
+  // Include all tasks in both total and done so the set is consistent (no >100% bug)
+  const total = tasks.length;
   const done = tasks.filter(t => t.done).length;
   const pct = total > 0 ? Math.round(done / total * 100) : 0;
   
@@ -4596,11 +4604,8 @@ function renderVelocity() {
   const bestDay = last14.length > 0 ? last14.reduce((best, e) => (e.done || 0) > (best.done || 0) ? e : best, last14[0]) : null;
   const bestDayLabel = bestDay ? new Date(bestDay.date + 'T12:00:00').toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' }) : '—';
 
-  // Streak: consecutive days with score >= 5
+  // Streak: consecutive days with score >= 5 (sorted is descending, so we walk most-recent-first)
   let streak = 0;
-  for (let i = sorted.length - 1; i >= 0; i--) {
-    // Walk from most recent
-  }
   for (const entry of sorted) {
     if ((entry.score || 0) >= 5) streak++;
     else break;
@@ -4816,48 +4821,33 @@ function renderWorkload() {
     </div>
 
     <div style="background:var(--bg-secondary); border-radius:14px; padding:16px; margin-bottom:20px; border:1px solid rgba(255,255,255,0.04);">
-      <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; margin-bottom:12px;">7-Day Priority Distribution</div>
+      <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; margin-bottom:12px;">Current Priority Distribution</div>
       <canvas id="workloadChart" height="160"></canvas>
     </div>
   </div>`;
 
   v2.innerHTML = html;
 
-  if (last7.length > 0) {
+  if (totalOpen > 0) {
     const ctx = document.getElementById('workloadChart');
     if (ctx) {
       if (workloadChartInst) workloadChartInst.destroy();
 
-      // Approximate priority breakdown from tasks array per day
-      const highData = last7.map(e => {
-        const dayTasks = e.tasks || [];
-        return dayTasks.length > 0 ? Math.round(dayTasks.length * 0.3) : 0;
-      });
-      const medData = last7.map(e => {
-        const dayTasks = e.tasks || [];
-        return dayTasks.length > 0 ? Math.round(dayTasks.length * 0.5) : 0;
-      });
-      const lowData = last7.map(e => {
-        const dayTasks = e.tasks || [];
-        return dayTasks.length > 0 ? dayTasks.length - Math.round(dayTasks.length * 0.3) - Math.round(dayTasks.length * 0.5) : 0;
-      });
-
+      // Use real priority counts from the live tasks array
       workloadChartInst = new Chart(ctx, {
-        type: 'bar',
+        type: 'doughnut',
         data: {
-          labels: last7.map(e => { const d = new Date(e.date + 'T12:00:00'); return d.toLocaleDateString('en', { weekday: 'short' }); }),
-          datasets: [
-            { label: 'High', data: highData, backgroundColor: '#E24B4A', borderRadius: 3, barPercentage: 0.6 },
-            { label: 'Medium', data: medData, backgroundColor: '#EF9F27', borderRadius: 3, barPercentage: 0.6 },
-            { label: 'Low', data: lowData, backgroundColor: '#378ADD', borderRadius: 3, barPercentage: 0.6 }
-          ]
+          labels: ['High', 'Medium', 'Low'],
+          datasets: [{
+            data: [highCount, medCount, lowCount],
+            backgroundColor: ['#E24B4A', '#EF9F27', '#378ADD'],
+            borderWidth: 0
+          }]
         },
         options: {
           responsive: true,
-          plugins: { legend: { display: true, position: 'bottom', labels: { color: '#6B686B', boxWidth: 12 } } },
-          scales: {
-            x: { stacked: true, ticks: { color: '#888780' }, grid: { display: false } },
-            y: { stacked: true, beginAtZero: true, ticks: { color: '#888780', stepSize: 1 }, grid: { color: '#F0EFEB' } }
+          plugins: {
+            legend: { display: true, position: 'bottom', labels: { color: 'rgba(255,255,255,0.4)', boxWidth: 12 } }
           }
         }
       });
@@ -4943,7 +4933,7 @@ async function addExpenseUI() {
   if (!amt) return;
   const cat = prompt('Category (e.g. Software, Payroll, Setup):', 'Software');
   
-  const idValue = uid();
+  const idValue = uuidv4();
   const e = {
     id: idValue,
     date: todayStr(),
@@ -4984,7 +4974,7 @@ async function seedDefaultMilestones() {
     { title: 'YC Application', target_value: 100, unit: '%', category: 'Fundraising', target_date: '2026-09-01' }
   ];
   for (let m of defaults) {
-    const rec = { id: uid(), user_id: user.id, ...m, current_value: 0 };
+    const rec = { id: uuidv4(), user_id: user.id, ...m, current_value: 0 };
     milestones.push(rec);
     if (sb) await sb.from('milestones').insert([rec]);
   }
@@ -5347,6 +5337,7 @@ function renderDelegationV2() {
         </div>
         ${d.notes ? `<div style="font-size:11px; color:var(--text-dim); margin-top:6px;">${esc(d.notes)}</div>` : ''}
         ${isOverdue ? '<div style="font-size:11px; color:var(--red-400); margin-top:4px; font-weight:600;">⚠ Overdue</div>' : ''}
+      </div>
       </div>`;
     });
   }
@@ -5426,9 +5417,9 @@ function generateWeeklySummaryHtml() {
     }
   });
   
-  // If daily logs are sparse, fallback to tasks done count from 'cat === this-week' or generally 'done'
+  // If completed_tasks field is absent, fall back to summing the per-day done counts from this week's log entries
   if (weeklyCompletedCount === 0) {
-    weeklyCompletedCount = tasks.filter(t => t.done && t.cat === 'this-week').length || tasks.filter(t => t.done).length;
+    weeklyCompletedCount = thisWeekLogs.reduce((sum, l) => sum + (l.done || 0), 0);
   }
   
   const weekOutreach = outreach_logs.filter(l => l.date >= thisMonday);
@@ -5996,7 +5987,7 @@ function saveQuickCapture() {
   const text = document.getElementById('quickCaptureInput').value.trim();
   if (!text) return;
   const t = {
-    id: uid(), text, cat: 'inbox', priority: 'medium', done: false,
+    id: uuidv4(), text, cat: 'inbox', priority: 'medium', done: false,
     notes: '', daily: false, subtasks: [], streak: 0, lastStreakDate: null, reminderTime: null,
     domain: 'General', dueDate: null, status: 'not-started', phase: null, owner: 'Ladson', dependencies: [], okrId: null,
     updatedAt: new Date().toISOString()
@@ -6039,7 +6030,7 @@ function saveTask() {
     }
   } else {
     const newTask = {
-      id: uid(), text, cat, priority, done: (status === 'done'), notes, daily: (cat === 'today' || cat === 'daily-habits'),
+      id: uuidv4(), text, cat, priority, done: (status === 'done'), notes, daily: (cat === 'today' || cat === 'daily-habits'),
       subtasks: [], streak: 0, lastStreakDate: null, reminderTime,
       domain, dueDate, status, phase, owner, dependencies: [...modalDependencies], okrId,
       updatedAt: new Date().toISOString()
@@ -6614,8 +6605,8 @@ function checkReminders() {
 
   let firedAny = false;
 
-  // Check per-task reminders (today + daily habits + standalone reminders)
-  const todayTasks = tasks.filter(t => (t.cat === 'today' || t.cat === 'daily-habits' || t.cat === 'reminders') && !t.done && t.reminderTime);
+  // Check per-task reminders — fire for any undone task that has a reminderTime set, regardless of category
+  const todayTasks = tasks.filter(t => !t.done && t.reminderTime);
   for (const t of todayTasks) {
     if (t.reminderTime === currentTime) {
       // Phase 5.1: If app is backgrounded and high priority, send email fallback
@@ -6651,7 +6642,7 @@ function quickAdd() {
   if (!text) return;
   const cat = activeTab;
   const newTask = {
-    id: uid(), text, cat, priority: 'medium', done: false, notes: '',
+    id: uuidv4(), text, cat, priority: 'medium', done: false, notes: '',
     daily: cat === 'today', subtasks: [], streak: 0, lastStreakDate: null,
     updatedAt: new Date().toISOString()
   };
@@ -7166,7 +7157,7 @@ function handleImportFile(event) {
     // Import new tasks
     newTasks.forEach(p => {
       const newTask = {
-        id: uid(), text: p.text, cat: p.cat, priority: p.priority,
+        id: uuidv4(), text: p.text, cat: p.cat, priority: p.priority,
         done: p.done, notes: '', daily: p.daily,
         reminderTime: p.reminderTime || null,
         subtasks: [], streak: 0, lastStreakDate: null,
@@ -7365,7 +7356,7 @@ async function importProspectsFromStagingFile() {
           const exists = prospects.some(p => p.name.toLowerCase() === name.toLowerCase() && p.company.toLowerCase() === company.toLowerCase());
           if (!exists) {
             const p = {
-              id: uid(),
+              id: uuidv4(),
               name, title, company,
               linkedinUrl,
               status: 'new',
@@ -7434,7 +7425,7 @@ async function autoImportFromWorkspace(handle) {
       } else {
         // Create genuinely new task
         const newTask = {
-          id: uid(), text: p.text, cat: p.cat, priority: p.priority,
+          id: uuidv4(), text: p.text, cat: p.cat, priority: p.priority,
           done: false, notes: '', daily: p.daily,
           reminderTime: p.reminderTime || null,
           subtasks: [], streak: 0, lastStreakDate: null,
@@ -7767,7 +7758,6 @@ function openWeeklyReviewModal() {
   renderWeeklyReviewDots();
   // Set date label
   const monday = getMondayStr(0);
-  const sunday = getMondayStr(0);
   const d = new Date(monday + 'T12:00:00');
   const end = new Date(d);
   end.setDate(end.getDate() + 6);
@@ -7811,8 +7801,11 @@ function weeklyReviewNext() {
 
 function saveWeeklyReview() {
   const monday = getMondayStr(0);
+  // Reuse existing review id if one already exists for this week (dedup by weekStart)
+  const _existingReviews = JSON.parse(localStorage.getItem(WEEKLY_REVIEWS_KEY) || '[]');
+  const _existingReview = _existingReviews.find(r => r.weekStart === monday);
   const review = {
-    id: 'wr-' + monday,
+    id: _existingReview ? _existingReview.id : uuidv4(),
     weekStart: monday,
     savedAt: new Date().toISOString(),
     wins: document.getElementById('wr-wins')?.value.trim() || '',
@@ -7835,7 +7828,7 @@ function saveWeeklyReview() {
 
   // Save to localStorage
   const reviews = JSON.parse(localStorage.getItem(WEEKLY_REVIEWS_KEY) || '[]');
-  const existingIdx = reviews.findIndex(r => r.id === review.id);
+  const existingIdx = reviews.findIndex(r => r.weekStart === review.weekStart);
   if (existingIdx >= 0) {
     reviews[existingIdx] = review;
   } else {
