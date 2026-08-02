@@ -3,10 +3,13 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Malveon Tasks</title>
   <link rel="manifest" href="./manifest.json">
-  <meta name="theme-color" content="#534AB7">
+  <meta name="theme-color" content="#012BFF">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300..500;1,300..500&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -19,10 +22,10 @@
     content="A high-performance personal task manager and CRM with cloud sync and desktop integration.">
   <meta property="og:type" content="website">
   <meta property="og:image" content="./malveon-icon-512.png">
-  <meta property="og:url" content="https://malveon.github.io/">
+  <meta property="og:url" content="https://davidladson.github.io/My-own-To-Do/">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-  <link rel="stylesheet" href="./style.css?v=23">
+  <link rel="stylesheet" href="./style.css?v=32">
 </head>
 
 <body>
@@ -31,7 +34,8 @@
   <div class="auth-screen" id="authScreen" style="display:none">
     <div class="auth-card">
       <div class="auth-logo">
-        <h2><span>M</span>alveon Tasks</h2>
+        <img src="./malveon-icon-192.png" alt="Malveon" width="48" height="48" style="border-radius:12px;margin-bottom:12px">
+        <h2>Malveon Tasks</h2>
         <p>Sign in to sync across all your devices</p>
       </div>
       <label>Email</label>
@@ -53,7 +57,7 @@
     <div class="header">
       <div class="header-top">
         <div style="display:flex;align-items:center;gap:10px">
-          <div style="width:26px;height:26px;border-radius:6px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:#fff">M</div>
+          <img src="./malveon-icon-192.png" alt="Malveon" width="26" height="26" style="border-radius:6px">
           <div>
             <h1 style="font-size:18px">Malveon Tasks</h1>
             <div class="date" id="dateDisplay"></div>
@@ -61,9 +65,9 @@
         </div>
         <div style="display:flex;gap:12px;align-items:center">
           <div class="streak" id="streakDisplay"></div>
-          <div style="position:relative;cursor:pointer" onclick="openNotifModal()">
+          <div style="position:relative;cursor:pointer;width:44px;height:44px;display:flex;align-items:center;justify-content:center;margin:-13px -13px -13px 0" onclick="openNotifModal()">
             <span style="font-size:18px">🔔</span>
-            <div id="notifDot" style="display:none;position:absolute;top:-2px;right:-2px;width:7px;height:7px;border-radius:50%;background:var(--red)"></div>
+            <div id="notifDot" style="display:none;position:absolute;top:9px;right:9px;width:7px;height:7px;border-radius:50%;background:var(--red)"></div>
           </div>
           <div class="avatar-circle" id="userAvatar">L</div>
         </div>
@@ -116,26 +120,29 @@
     <div id="v2Content"></div>
 
     <button class="fab-v2 fab-final-fix" id="fabBtn" onclick="openAddModal()" style="bottom: 110px !important;">+</button>
-    <button class="quick-add-fab" id="quickAddFab" onclick="openQuickCaptureModal()">⚡</button>
 
     <!-- Bottom Navigation Bar -->
     <nav class="bottom-nav" id="bottomNav">
-      <button class="bottom-nav-item active" data-section="tasks" onclick="switchSection('tasks')">
-        <span class="bottom-nav-icon">☑</span>
-        <span class="bottom-nav-label">Tasks</span>
+      <button class="bottom-nav-item active" data-section="rightnow" onclick="switchSection('rightnow')">
+        <span class="bottom-nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg></span>
+        <span class="bottom-nav-label">Right Now</span>
       </button>
-      <button class="bottom-nav-item" data-section="ops" onclick="switchSection('ops')">
-        <span class="bottom-nav-icon">⚙</span>
-        <span class="bottom-nav-label">Ops</span>
+      <button class="bottom-nav-item" data-section="pipeline" onclick="switchSection('pipeline')">
+        <span class="bottom-nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h18v3l-7 7v6l-4 2v-8L3 6V3z"/></svg></span>
+        <span class="bottom-nav-label">Pipeline</span>
+      </button>
+      <button class="bottom-nav-item" data-section="plan" onclick="switchSection('plan')">
+        <span class="bottom-nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.5" fill="currentColor"/></svg></span>
+        <span class="bottom-nav-label">Plan</span>
+      </button>
+      <button class="bottom-nav-item" data-section="log" onclick="switchSection('log')">
+        <span class="bottom-nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h4"/></svg></span>
+        <span class="bottom-nav-label">Log</span>
+      </button>
+      <button class="bottom-nav-item" data-section="later" onclick="switchSection('later')">
+        <span class="bottom-nav-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg></span>
+        <span class="bottom-nav-label">Later</span>
         <div class="bottom-nav-dot" id="opsAlertDot" style="display:none"></div>
-      </button>
-      <button class="bottom-nav-item" data-section="crm" onclick="switchSection('crm')">
-        <span class="bottom-nav-icon">☆</span>
-        <span class="bottom-nav-label">CRM</span>
-      </button>
-      <button class="bottom-nav-item" data-section="analytics" onclick="switchSection('analytics')">
-        <span class="bottom-nav-icon">◈</span>
-        <span class="bottom-nav-label">Analytics</span>
       </button>
     </nav>
 
@@ -246,18 +253,6 @@
       </div>
     </div>
 
-    <!-- Quick Capture Modal -->
-    <div class="modal-overlay" id="quickCaptureModal" onclick="if(event.target===this)closeQuickCaptureModal()">
-      <div class="modal">
-        <h2>Quick Capture</h2>
-        <input type="text" id="quickCaptureInput" placeholder="Got an idea? Type and hit Enter..."
-          onkeydown="if(event.key==='Enter')saveQuickCapture()" style="font-size:18px; padding:16px;">
-        <div class="modal-actions" style="margin-top:16px;">
-          <button class="btn-cancel" onclick="closeQuickCaptureModal()">Cancel</button>
-          <button class="btn-save" onclick="saveQuickCapture()">Save to Inbox</button>
-        </div>
-      </div>
-    </div>
 
     <!-- Review Modal -->
     <div class="modal-overlay" id="reviewModal" onclick="if(event.target===this)closeReviewModal()">
@@ -458,7 +453,7 @@
 
   </div><!-- /mainApp -->
 
-  <script src="./app.js?v=27"></script>
+  <script src="./app.js?v=34"></script>
 
 
   

@@ -1,54 +1,57 @@
     :root {
-      /* Brand - Purple */
-      --purple-50: #EEEDFE;
-      --purple-100: #CECBF6;
-      --purple-200: #AFA9EC;
-      --purple-400: #7F77DD;
-      --purple-600: #534AB7;
-      --purple-800: #3C3489;
-      --purple-900: #26215C;
+      /* Brand - Malveon Blueprint Cobalt (DESIGN.md) */
+      --purple-50: #EEF3FF;   /* ln-brand-tint */
+      --purple-100: #DBE6FF;
+      --purple-200: #A8C2FF;
+      --purple-400: #3B82F6;  /* ln-brand-500 */
+      --purple-600: #012BFF;  /* ln-cobalt - primary anchor */
+      --purple-800: #000342;  /* ln-navy - dim/deep variant */
+      --purple-900: #04063A;  /* ln-navy-soft */
 
-      /* Success - Teal */
-      --teal-50: #E1F5EE;
-      --teal-100: #9FE1CB;
-      --teal-400: #1D9E75;
-      --teal-600: #0F6E56;
-      --teal-800: #0B5041;
+      /* Success - ln-pass */
+      --teal-50: #DCFCE7;    /* ln-pass-bg */
+      --teal-100: #34D399;   /* ln-pass-hi */
+      --teal-400: #22C55E;   /* ln-pass */
+      --teal-600: #16A34A;   /* ln-pass-text */
+      --teal-800: #14532D;
 
-      /* Warning - Amber */
-      --amber-50: #FAEEDA;
-      --amber-100: #FAC775;
-      --amber-400: #EF9F27;
-      --amber-600: #BA7517;
-      --amber-800: #854F0B;
-      --amber-900: #633806;
+      /* Warning - ln-caution / ln-mild */
+      --amber-50: #FEF3E2;
+      --amber-100: #FBBF24;  /* ln-warn-soft */
+      --amber-400: #F97316;  /* ln-caution */
+      --amber-600: #C2410C;
+      --amber-800: #7C2D12;
+      --amber-900: #431407;
 
-      /* Danger - Red */
-      --red-50: #FCEBEB;
-      --red-100: #F7C1C1;
-      --red-400: #E24B4A;
-      --red-600: #A32D2D;
-      --red-800: #791F1F;
-      --red-900: #501313;
+      /* Danger - ln-danger */
+      --red-50: #FEE2E2;
+      --red-100: #F87171;    /* ln-danger-soft */
+      --red-400: #EF4444;    /* ln-danger */
+      --red-600: #B91C1C;
+      --red-800: #7F1D1D;
+      --red-900: #450A0A;
 
-      /* Info - Blue */
-      --blue-50: #E6F1F8;
-      --blue-400: #378ADD;
-      --blue-600: #185FA5;
-      --blue-800: #0C447C;
+      /* Info - ln-azure */
+      --blue-50: #EFF6FF;
+      --blue-400: #60A5FA;   /* ln-azure */
+      --blue-600: #2563EB;   /* ln-cobalt-soft */
+      --blue-800: #1E3A8A;
 
-      /* Neutrals - Gray (Light Structural Foundation) */
-      --gray-50: #F7F7F5;
-      --gray-100: #F0EFEB;
-      --gray-400: #888780;
-      --gray-600: #6B686B;
-      --gray-900: #1A1A1A;
+      /* Neutrals - ln-paper / ln-ink (Light Structural Foundation) */
+      --gray-50: #FBFAF8;    /* ln-paper */
+      --gray-100: #F4F2EE;   /* ln-paper-2 */
+      --gray-400: #5C6068;   /* ln-ink-60 */
+      --gray-600: #383B40;
+      --gray-900: #0D1117;   /* ln-ink */
+
+      /* Hairlines - ln-line-light */
+      --line-light: #E7E4DF;
 
       /* Functional Mapping */
       --bg: var(--gray-50);
       --bg-secondary: var(--gray-100);
-      --bg-tertiary: var(--gray-400);
-      --card: #FFFFFF;
+      --bg-tertiary: var(--gray-100);
+      --card: var(--gray-50);
       --card-hover: var(--gray-100);
       --accent: var(--purple-600);
       --accent-dim: var(--purple-800);
@@ -64,8 +67,44 @@
 
       --text: var(--gray-900);
       --text-dim: var(--gray-400);
-      --border: var(--gray-100);
+      --border: var(--line-light);
       --done-text: var(--gray-400);
+
+      /* Aliases - used throughout app.js but never previously declared here.
+         Every one of these resolved to nothing (inherited color) until now. */
+      --text-muted: var(--text-dim);
+      --text-light: var(--text-dim);
+      --green-400: var(--green);
+      --orange: var(--yellow);
+      --amber: var(--yellow);
+      --bg-layer-2: var(--bg-secondary);
+      --surface: var(--card);
+      --teal-transparent: rgb(34 197 94 / 0.12);
+      --yellow-100: var(--amber-100);
+      --yellow-900: var(--amber-900);
+
+      /* Typography (DESIGN.md) */
+      --font-body: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-display: 'Fraunces', Georgia, serif;
+      --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', monospace;
+
+      /* Spacing scale (DESIGN.md: 4px base, 8px functional rhythm) */
+      --space-1: 2px;
+      --space-2: 4px;
+      --space-3: 8px;
+      --space-4: 12px;
+      --space-5: 16px;
+      --space-6: 24px;
+      --space-7: 32px;
+      --space-8: 48px;
+      --space-9: 64px;
+      --space-10: 96px;
+
+      /* Radius scale (DESIGN.md ln- tokens) */
+      --radius-cell: 12px;   /* buttons, inputs, table cells, status pills */
+      --radius-card: 18px;   /* cards, panels, modals */
+      --radius-zone: 36px;   /* large zones, hero shells */
+      --radius-pill: 9999px; /* avatars, status dots */
     }
 
     * {
@@ -95,11 +134,14 @@
     }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: var(--font-body);
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
-      padding-bottom: 120px;
+      /* Bottom nav (56px) + the single add-task FAB at bottom:110px, 42px
+         tall (top edge 152px up) + breathing room, so the last list item
+         never hides behind the floating button. */
+      padding-bottom: 180px;
     }
 
     .header {
@@ -135,7 +177,7 @@
     .score-badge {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 12px;
+      border-radius: var(--radius-cell);
       padding: 6px 14px;
       font-size: 14px;
       font-weight: 500;
@@ -170,6 +212,13 @@
       font-size: 12px;
       color: var(--text-dim);
       margin-top: 4px;
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .tabular-nums {
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
     }
 
     .tabs {
@@ -187,7 +236,7 @@
     .tab {
       flex-shrink: 0;
       padding: 8px 16px;
-      border-radius: 20px;
+      border-radius: var(--radius-card);
       font-size: 13px;
       font-weight: 500;
       border: none;
@@ -282,7 +331,7 @@
       align-items: flex-start;
       gap: 12px;
       background: var(--card);
-      border-radius: 12px;
+      border-radius: var(--radius-cell);
       padding: 14px 16px;
       margin-bottom: 8px;
       border: 1px solid var(--border);
@@ -441,7 +490,7 @@
       border: 1px solid var(--border);
       background: var(--bg);
       color: var(--text);
-      font-size: 15px;
+      font-size: 16px;
       outline: none;
     }
 
@@ -465,7 +514,7 @@
     .modal-actions button {
       flex: 1;
       padding: 14px;
-      border-radius: 12px;
+      border-radius: var(--radius-cell);
       border: none;
       font-size: 15px;
       font-weight: 500;
@@ -509,6 +558,8 @@
       gap: 4px;
       font-size: 13px;
       color: var(--yellow);
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
     }
 
     /* Auth Screen */
@@ -524,7 +575,7 @@
     .auth-card {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 20px;
+      border-radius: var(--radius-card);
       padding: 32px 24px;
       width: 100%;
       max-width: 380px;
@@ -535,13 +586,10 @@
       margin-bottom: 24px;
     }
 
-    .auth-logo h1 {
+    .auth-logo h2 {
+      font-family: var(--font-display);
       font-size: 28px;
-      font-weight: 700;
-    }
-
-    .auth-logo h1 span {
-      color: var(--accent);
+      font-weight: 500;
     }
 
     .auth-logo p {
@@ -561,11 +609,11 @@
     .auth-card input {
       width: 100%;
       padding: 14px;
-      border-radius: 12px;
+      border-radius: var(--radius-cell);
       border: 1px solid var(--border);
       background: var(--bg);
       color: var(--text);
-      font-size: 15px;
+      font-size: 16px;
       outline: none;
     }
 
@@ -582,7 +630,7 @@
     .auth-actions button {
       flex: 1;
       padding: 14px;
-      border-radius: 12px;
+      border-radius: var(--radius-cell);
       border: none;
       font-size: 15px;
       font-weight: 500;
@@ -739,7 +787,7 @@
     .detail-section {
       background: var(--bg);
       border: 1px solid var(--border);
-      border-radius: 12px;
+      border-radius: var(--radius-cell);
       padding: 14px 16px;
       margin-bottom: 12px;
     }
@@ -765,7 +813,7 @@
       align-items: center;
       gap: 10px;
       padding: 12px 16px;
-      border-radius: 12px;
+      border-radius: var(--radius-cell);
       margin-bottom: 12px;
       font-size: 14px;
       font-weight: 500;
@@ -797,7 +845,7 @@
     .detail-actions button {
       flex: 1;
       padding: 14px;
-      border-radius: 12px;
+      border-radius: var(--radius-cell);
       border: none;
       font-size: 15px;
       font-weight: 500;
@@ -828,7 +876,7 @@
     /* History styles */
     .history-card {
       background: var(--card);
-      border-radius: 12px;
+      border-radius: var(--radius-cell);
       padding: 16px;
       margin-bottom: 10px;
       border: 1px solid var(--border);
@@ -881,7 +929,7 @@
     .history-week-summary {
       background: var(--purple-100);
       padding: 24px 20px;
-      border-radius: 20px;
+      border-radius: var(--radius-card);
       margin: 0 16px 16px;
       border: 1px solid var(--purple-200);
     }
@@ -899,7 +947,7 @@
 
     .sync-card {
       background: var(--card);
-      border-radius: 12px;
+      border-radius: var(--radius-cell);
       padding: 20px;
       margin-bottom: 12px;
       border: 1px solid var(--border);
@@ -919,9 +967,12 @@
     }
 
     .sync-btn {
-      display: inline-block;
-      padding: 14px 28px;
-      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 8px 28px;
+      border-radius: var(--radius-cell);
       border: none;
       font-size: 15px;
       font-weight: 500;
@@ -976,7 +1027,7 @@
     .reminders-hero {
       background: var(--teal-50);
       padding: 24px 20px;
-      border-radius: 20px;
+      border-radius: var(--radius-card);
       margin: 0 16px 16px;
       border: 1px solid var(--teal-100);
       text-align: center;
@@ -985,7 +1036,7 @@
     .review-prompt {
       background: var(--purple-50);
       border: 1px solid var(--purple-100);
-      border-radius: 12px;
+      border-radius: var(--radius-cell);
       padding: 16px;
       margin: 12px 16px;
       text-align: center;
@@ -1018,7 +1069,7 @@
 
     .resource-card {
       background: var(--card);
-      border-radius: 12px;
+      border-radius: var(--radius-cell);
       padding: 16px;
       margin-bottom: 10px;
       border: 1px solid var(--border);
@@ -1130,7 +1181,7 @@
     .quick-capture input {
       flex: 1;
       padding: 12px 16px;
-      border-radius: 12px;
+      border-radius: var(--radius-cell);
       border: 1px solid var(--border);
       background: var(--card);
       color: var(--text);
@@ -1286,7 +1337,7 @@
       align-items: center;
       background: var(--card);
       padding: 14px 16px;
-      border-radius: 12px;
+      border-radius: var(--radius-cell);
       margin-bottom: 8px;
       border: 1px solid var(--border);
       border-left: none; /* Ensure compatibility with priority borders */
@@ -1294,11 +1345,6 @@
       cursor: pointer;
     }
 
-    .v2-task-row {
-      border-left: 1px solid var(--border); /* Default border for v2-task-row */
-      border-top-left-radius: 12px;
-      border-bottom-left-radius: 12px;
-    }
 
     .reminder-row:last-child {
       border-bottom: none;
@@ -1385,7 +1431,7 @@
     .notif-permission-card {
       background: linear-gradient(135deg, #1a2a1a, #1a1a1a);
       border: 1px solid var(--green);
-      border-radius: 12px;
+      border-radius: var(--radius-cell);
       padding: 16px;
       text-align: center;
       margin-bottom: 12px;
@@ -1807,7 +1853,7 @@
       min-width: 90px;
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 12px;
+      border-radius: var(--radius-cell);
       padding: 12px;
       text-align: center;
     }
@@ -1846,7 +1892,7 @@
     .v2-card {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 12px;
+      border-radius: var(--radius-cell);
       padding: 14px 16px;
       margin: 0 16px 8px;
       transition: all 0.2s;
@@ -1856,34 +1902,14 @@
       background: var(--card-hover);
     }
 
-    .v2-card.red-left, .high-left {
-      border-left: 3px solid var(--red-600) !important;
-      background: var(--red-50);
-    }
-
-    .v2-card.yellow-left, .medium-left {
-      border-left: 3px solid var(--amber-600) !important;
-      background: var(--amber-50);
-    }
-
+    /* Priority left-border color removed from task rows (.high-left/.medium-left/
+       .low-left/.success-left/.gray-left) — priority is already shown by the text
+       badge, the colored stripe was redundant. .v2-card.accent-left is kept: it's
+       a real, still-used card accent (OKR card, Milestone "next up"), unrelated
+       to task-row priority. */
     .v2-card.accent-left, .purple-left {
       border-left: 3px solid var(--purple-600) !important;
       background: var(--purple-50);
-    }
-
-    .v2-card.green-left, .success-left {
-      border-left: 3px solid var(--teal-600) !important;
-      background: var(--teal-50);
-    }
-
-    .v2-card.blue-left, .low-left {
-      border-left: 3px solid var(--blue-600) !important;
-      background: var(--blue-50);
-    }
-
-    .v2-card.gray-left, .gray-left {
-      border-left: 3px solid var(--gray-400) !important;
-      background: var(--gray-50);
     }
 
     /* --- Status Dots --- */
@@ -1926,7 +1952,10 @@
 
     .chip {
       flex-shrink: 0;
-      padding: 6px 14px;
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
+      padding: 0 16px;
       border-radius: 16px;
       font-size: 12px;
       font-weight: 500;
@@ -2005,22 +2034,24 @@
 
     /* --- V2 Task Row --- */
     .v2-task-row {
+      /* Flat list row, not a separate floating card — one border between rows,
+         no per-row radius/shadow/gap, matching a plain list not a stack of tiles. */
       display: flex;
       align-items: flex-start;
       gap: 12px;
-      background: var(--card);
-      border-radius: 12px;
-      padding: 14px 16px;
-      margin-bottom: 8px;
-      border: 1px solid var(--border);
-      transition: all 0.2s;
+      background: transparent;
+      border-radius: 0;
+      padding: 14px 4px;
+      margin-bottom: 0;
+      border: none;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.15s;
       cursor: pointer;
       -webkit-user-select: none;
       user-select: none;
     }
 
     .v2-task-row:active {
-      transform: scale(0.98);
       background: var(--card-hover);
     }
 
@@ -2250,7 +2281,7 @@
     .skeleton-card {
       height: 72px;
       margin: 0 16px 8px;
-      border-radius: 12px;
+      border-radius: var(--radius-cell);
     }
 
     @keyframes skeleton-shimmer {
@@ -2280,7 +2311,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 4px 16px rgba(83, 74, 183, 0.4);
+      box-shadow: 0 4px 16px rgba(1, 43, 255, 0.35);
       cursor: pointer;
       transition: transform 0.2s;
     }
@@ -2366,29 +2397,6 @@
   line-height: 1.5;
 }
 
-/* V3 Additions */
-.quick-add-fab {
-  position: fixed;
-  bottom: 110px;
-  right: 90px;
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: var(--yellow);
-  color: #fff;
-  border: none;
-  font-size: 28px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-  cursor: pointer;
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.2s;
-}
-.quick-add-fab:active {
-  transform: scale(0.9);
-}
 .bulk-checkbox {
   flex-shrink: 0;
   width: 20px;

@@ -4,8 +4,8 @@
   "description": "Daily task tracker and progress log for Malveon",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#0f0f0f",
-  "theme_color": "#534AB7",
+  "background_color": "#fbfaf8",
+  "theme_color": "#012bff",
   "orientation": "portrait",
   "icons": [
     {

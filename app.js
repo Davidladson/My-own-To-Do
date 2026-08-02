@@ -296,29 +296,100 @@ let activeSection = localStorage.getItem(NAV_KEY) || 'tasks';
 let activeTopTab = null; // set per section
 
 const SECTIONS = {
-  tasks: ['Inbox', 'Today', 'Habits', 'This Week', 'Someday', 'Recurring', 'Calendar', 'Domains', 'Kavin', 'Reminders', 'Done'],
-  ops: ['Compliance', 'OKR', 'Milestones', 'Decisions', 'Delegation', 'Review', 'Playbook'],
-  crm: ['Pipeline', 'Pilots', 'Insights'],
-  analytics: ['Outreach', 'Runway', 'History', 'Velocity', 'Workload', 'Sync']
+  rightnow: ['Right Now'],
+  pipeline: ['Pipeline'],
+  plan: ['Plan'],
+  log: ['Log'],
+  later: ['Later']
 };
+
+// Migrate a stale activeSection from before this nav rebuild (old values: tasks/ops/crm/analytics).
+// Without this, a device with an old malveon_nav_section value silently falls through to
+// dead legacy dispatch code instead of the new Right Now / Pipeline / Plan / Log / Later screens.
+if (!SECTIONS[activeSection]) activeSection = 'rightnow';
+
+// Screens reachable only through the "Later" menu (not on the daily bottom nav).
+// key = legacy dispatch value used by renderScreen(), label/icon for the menu row.
+const LATER_ITEMS = [
+  { legacy: 'compliance', label: 'Compliance', hint: 'Tax & filing deadlines' },
+  { legacy: 'review', label: 'Review', hint: 'Nightly / weekly reflection' },
+  { legacy: 'playbook', label: 'Playbook', hint: 'Scripts & templates' },
+  { legacy: 'delegation', label: 'Delegation', hint: 'Tracked with Kavin' },
+  { legacy: 'pilots', label: 'Pilots', hint: 'Active pilot onboarding' },
+  { legacy: 'insights', label: 'Insights', hint: 'CRM notes & learnings' },
+  { legacy: 'someday', label: 'Someday', hint: 'Backlog, not scheduled' },
+  { legacy: 'recurring', label: 'Recurring', hint: 'Manage habit templates' },
+  { legacy: 'calendar', label: 'Calendar', hint: 'Month view' },
+  { legacy: 'runway', label: 'Runway', hint: '$220 budget tracker' },
+  { legacy: 'history', label: 'History', hint: 'Past activity' },
+  { legacy: 'velocity', label: 'Velocity', hint: 'Task throughput' },
+  { legacy: 'workload', label: 'Workload', hint: 'Capacity check' },
+  { legacy: 'reminders', label: 'Reminders', hint: 'Time-based reminders' },
+  { legacy: 'done', label: 'Done', hint: 'Completed archive' },
+  { legacy: 'sync', label: 'Sync & Settings', hint: 'Account, notifications' }
+];
+
+// Dispatch table for the "Later" menu — each existing, already-working render
+// function reused as-is, just reached through the new menu instead of a tab.
+const LATER_DISPATCH = {
+  compliance: () => renderCompliance(),
+  review: () => renderReviewV2(),
+  playbook: () => renderPlaybookV2(),
+  delegation: () => renderDelegationV2(),
+  pilots: () => renderPilots(),
+  insights: () => renderInsights(),
+  someday: () => renderSomeday(),
+  recurring: () => renderRecurring(),
+  calendar: () => renderCalendarView(),
+  runway: () => renderRunway(),
+  history: () => renderHistoryV2(),
+  velocity: () => renderVelocity(),
+  workload: () => renderWorkload(),
+  reminders: () => renderReminders(),
+  done: () => renderDone(),
+  sync: () => { activeTab = 'sync'; renderView(); }
+};
+
+// Jump straight to a "Later" screen from anywhere (e.g. a quick link on Log or Plan)
+function jumpToLater(legacy) {
+  switchSection('later');
+  openLaterItem(legacy);
+}
+let laterSubView = null; // null = show the Later menu; otherwise a LATER_ITEMS[].legacy value
 
 // Map V2 top tab names back to legacy activeTab values for backward compat
 const TAB_TO_LEGACY = {
   'Inbox': 'inbox', 'Today': 'today', 'Habits': 'daily-habits', 'This Week': 'this-week',
-  'Someday': 'someday', 'Recurring': 'recurring', 'Reminders': 'reminders', 'Calendar': 'calendar', 'Domains': 'domains', 'Kavin': 'kavin', 'Done': 'done',
+  'Someday': 'someday', 'Recurring': 'recurring', 'Reminders': 'reminders', 'Calendar': 'calendar', 'Done': 'done',
   'Compliance': 'compliance', 'OKR': 'okr', 'Milestones': 'milestones', 'Decisions': 'decisions',
   'Delegation': 'delegation', 'Review': 'review', 'Playbook': 'playbook',
   'Pipeline': 'pipeline', 'Pilots': 'pilots', 'Insights': 'insights',
   'Outreach': 'outreach', 'Runway': 'runway', 'History': 'history', 'Velocity': 'velocity',
-  'Workload': 'workload', 'Sync': 'sync'
+  'Workload': 'workload', 'Sync': 'sync',
+  'Right Now': 'rightnow', 'Plan': 'plan', 'Log': 'log', 'Later': 'later'
 };
 
 function switchSection(section) {
   activeSection = section;
   localStorage.setItem(NAV_KEY, section);
   activeTopTab = SECTIONS[section][0];
+  if (section !== 'later') laterSubView = null; // always land on the menu, not wherever you left off
   renderBottomNav();
   renderTopTabs();
+  renderScreen();
+
+  // FAB / quick-capture visibility: only the daily-driver screens need quick task entry
+  const fabBtn = document.getElementById('fabBtn');
+  if (fabBtn) fabBtn.style.display = ['rightnow', 'log'].includes(section) ? 'flex' : 'none';
+  const quickCap = document.getElementById('quickCapture');
+  if (quickCap) quickCap.style.display = section === 'rightnow' ? 'flex' : 'none';
+  const v3Tb = document.getElementById('v3Toolbar');
+  if (v3Tb) v3Tb.style.display = 'none'; // legacy search/bulk toolbar, superseded by the new screens
+}
+
+// Navigate to a specific screen inside the "Later" menu, or back to the menu itself (legacy=null)
+function openLaterItem(legacy) {
+  laterSubView = legacy;
   renderScreen();
 }
 
@@ -334,7 +405,7 @@ function switchTab(tabName) {
   renderScreen();
   // FAB visibility
   const fabBtn = document.getElementById('fabBtn');
-  if (fabBtn) fabBtn.style.display = (['history', 'velocity', 'domains', 'workload', 'sync', 'review'].includes(legacyTab)) ? 'none' : 'flex';
+  if (fabBtn) fabBtn.style.display = (['history', 'velocity', 'workload', 'sync', 'review'].includes(legacyTab)) ? 'none' : 'flex';
   // Quick capture visibility
   const quickCap = document.getElementById('quickCapture');
   const showQuick = ['inbox', 'today', 'daily-habits', 'this-week', 'before-pilot', 'waiting', 'someday', 'reminders'].includes(legacyTab);
@@ -343,8 +414,6 @@ function switchTab(tabName) {
   // V3 components visibility
   const v3Tb = document.getElementById('v3Toolbar');
   if (v3Tb) v3Tb.style.display = (activeSection === 'tasks') ? 'flex' : 'none';
-  const quickAddFab = document.getElementById('quickAddFab');
-  if (quickAddFab) quickAddFab.style.display = (activeSection === 'tasks') ? 'flex' : 'none';
 }
 
 function renderBottomNav() {
@@ -364,6 +433,10 @@ function renderTopTabs() {
   const el = document.getElementById('tabsContainer');
   if (!el) return;
   const tabs = SECTIONS[activeSection] || [];
+  // Every top-level section is now a single fused screen (Right Now / Pipeline /
+  // Plan / Log / Later) — a one-item tab strip is pure clutter, so hide it.
+  if (tabs.length <= 1) { el.replaceChildren(); el.style.display = 'none'; return; }
+  el.style.display = '';
   if (!activeTopTab || !tabs.includes(activeTopTab)) activeTopTab = tabs[0];
   el.innerHTML = tabs.map(t => {
     const isActive = t === activeTopTab;
@@ -384,7 +457,81 @@ function renderTopTabs() {
 function renderScreen() {
   updateNotifBadge();
   const legacy = TAB_TO_LEGACY[activeTopTab] || activeTopTab;
-  
+
+  // ---- New primary architecture (Right Now / Pipeline / Plan / Log / Later) ----
+  if (legacy === 'rightnow') {
+    activeTab = 'today';
+    document.getElementById('taskList').replaceChildren();
+    document.getElementById('syncSection').style.display = 'none';
+    document.getElementById('playbookSection').style.display = 'none';
+    document.getElementById('remindersSection').style.display = 'none';
+    document.getElementById('reviewPrompt').replaceChildren();
+    renderRightNow();
+    return;
+  }
+
+  if (legacy === 'plan') {
+    activeTab = 'this-week';
+    document.getElementById('taskList').replaceChildren();
+    document.getElementById('syncSection').style.display = 'none';
+    document.getElementById('playbookSection').style.display = 'none';
+    document.getElementById('remindersSection').style.display = 'none';
+    document.getElementById('reviewPrompt').replaceChildren();
+    renderPlanScreen();
+    return;
+  }
+
+  if (legacy === 'log') {
+    activeTab = 'inbox';
+    document.getElementById('taskList').replaceChildren();
+    document.getElementById('syncSection').style.display = 'none';
+    document.getElementById('playbookSection').style.display = 'none';
+    document.getElementById('remindersSection').style.display = 'none';
+    document.getElementById('reviewPrompt').replaceChildren();
+    renderLogScreen();
+    return;
+  }
+
+  if (legacy === 'later') {
+    document.getElementById('taskList').replaceChildren();
+    document.getElementById('syncSection').style.display = 'none';
+    document.getElementById('playbookSection').style.display = 'none';
+    document.getElementById('remindersSection').style.display = 'none';
+    document.getElementById('reviewPrompt').replaceChildren();
+    if (!laterSubView) {
+      renderLaterMenu();
+    } else {
+      activeTab = laterSubView;
+      renderLaterSubView(laterSubView);
+    }
+    return;
+  }
+  // ---- End new primary architecture ----
+
+  // Inbox: quick-captured tasks (cat: 'inbox') land here and were previously unviewable
+  if (legacy === 'inbox') {
+    activeTab = 'inbox';
+    document.getElementById('taskList').replaceChildren();
+    document.getElementById('syncSection').style.display = 'none';
+    document.getElementById('playbookSection').style.display = 'none';
+    document.getElementById('remindersSection').style.display = 'none';
+    document.getElementById('reviewPrompt').replaceChildren();
+    renderInbox();
+    return;
+  }
+
+  // Someday: backlog tasks, not scheduled to a specific week
+  if (legacy === 'someday') {
+    activeTab = 'someday';
+    document.getElementById('taskList').replaceChildren();
+    document.getElementById('syncSection').style.display = 'none';
+    document.getElementById('playbookSection').style.display = 'none';
+    document.getElementById('remindersSection').style.display = 'none';
+    document.getElementById('reviewPrompt').replaceChildren();
+    renderSomeday();
+    return;
+  }
+
   // Phase 4: V2 Today Screen Routing
   if (legacy === 'today') {
     activeTab = 'today';
@@ -421,29 +568,6 @@ function renderScreen() {
     return;
   }
 
-  // Phase 2/19: V2 Domains Screen
-  if (legacy === 'domains') {
-    activeTab = 'domains';
-    document.getElementById('taskList').innerHTML = '';
-    document.getElementById('syncSection').style.display = 'none';
-    document.getElementById('playbookSection').style.display = 'none';
-    document.getElementById('remindersSection').style.display = 'none';
-    document.getElementById('reviewPrompt').innerHTML = '';
-    renderDomains();
-    return;
-  }
-
-  // Phase 2: V3 Kavin Screen
-  if (legacy === 'kavin') {
-    activeTab = 'kavin';
-    document.getElementById('taskList').innerHTML = '';
-    document.getElementById('syncSection').style.display = 'none';
-    document.getElementById('playbookSection').style.display = 'none';
-    document.getElementById('remindersSection').style.display = 'none';
-    document.getElementById('reviewPrompt').innerHTML = '';
-    renderKavinView();
-    return;
-  }
 
   // Phase 2: V3 Calendar Screen
   if (legacy === 'calendar') {
@@ -1317,11 +1441,27 @@ async function syncFromSupabase() {
       const localOrphans = tasks.filter(t => !remoteIds.has(t.id));
 
       if (localOrphans.length > 0) {
-        // If we have local orphans, AND we are online, check if these tasks were created *after* the last sync.
-        // If they are older tasks that just vanished from the DB, it means they were deleted elsewhere!
-        // Use 48h window — 10min was too aggressive and deleted valid offline-created tasks
-        const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60000).toISOString();
-        const staleOrphans = localOrphans.filter(t => t.updatedAt < twoDaysAgo);
+        // One-time forced reconciliation: devices with a local cache from before the
+        // updatedAt-missing-orphan bug was fixed can have orphans that got falsely
+        // stamped with a *recent* updatedAt during a past buggy push, which would let
+        // them dodge the 48h staleness check below and keep resurrecting for up to 48h
+        // after this fix ships. Run once per device: treat every current orphan as
+        // stale, no exceptions, then never run this branch again.
+        let staleOrphans;
+        if (!localStorage.getItem('malveon_orphan_reconcile_v1')) {
+          staleOrphans = localOrphans;
+          localStorage.setItem('malveon_orphan_reconcile_v1', 'true');
+        } else {
+          // If we have local orphans, AND we are online, check if these tasks were created *after* the last sync.
+          // If they are older tasks that just vanished from the DB, it means they were deleted elsewhere!
+          // Use 48h window — 10min was too aggressive and deleted valid offline-created tasks
+          // A MISSING updatedAt must count as stale, not new: `undefined < twoDaysAgo` is
+          // always false in JS, so tasks with no timestamp were never classified as stale and
+          // got silently re-pushed to the server forever (this is how March-era cached tasks
+          // kept resurrecting after being deleted server-side).
+          const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60000).toISOString();
+          staleOrphans = localOrphans.filter(t => !t.updatedAt || t.updatedAt < twoDaysAgo);
+        }
 
         if (staleOrphans.length > 0) {
           // Remove stale orphans locally
@@ -2734,6 +2874,234 @@ function renderThisWeek() {
   v2.innerHTML = html;
 }
 
+// ===================== V2 INBOX SCREEN =====================
+// Was previously unreachable: switchTab routed 'inbox' straight to the
+// generic "coming soon" fallback, even though openQuickCaptureModal
+// defaults every quick-captured task to cat:'inbox'.
+function renderInbox() {
+  const v2 = document.getElementById('v2Content');
+  if (!v2) return;
+
+  const inboxTasks = tasks.filter(t => t.cat === 'inbox');
+  let html = sectionLabel('Inbox');
+
+  if (inboxTasks.length === 0) {
+    html += `<div class="v2-empty" style="margin-top:24px;">
+      <div class="v2-empty-icon">📥</div>
+      <div class="v2-empty-text">Inbox is empty. Quick-captured tasks land here.</div>
+    </div>`;
+  } else {
+    inboxTasks.forEach(t => {
+      let badgeClass = 'pl';
+      let badgeText = 'Low';
+      if (t.priority === 'high') { badgeClass = 'ph'; badgeText = 'High'; }
+      if (t.priority === 'medium') { badgeClass = 'pm'; badgeText = 'Medium'; }
+      html += `
+      <div class="v2-task-row ${t.done ? 'done' : ''}" data-id="${t.id}" onclick="openTaskDetail('${t.id}')">
+        <div class="v2-task-check ${t.done ? 'checked' : ''}" onclick="event.stopPropagation(); toggleTask('${t.id}')"></div>
+        <div class="v2-task-content" style="flex: 1;">
+          <div class="v2-task-text" style="margin-bottom: 2px;">${esc(t.text)}</div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
+            <div class="badge ${badgeClass}">${badgeText}</div>
+          </div>
+        </div>
+      </div>`;
+    });
+  }
+
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  v2.replaceChildren(...doc.body.childNodes);
+}
+
+// ===================== V2 SOMEDAY SCREEN =====================
+// Was previously unreachable: same "coming soon" fallback as Inbox.
+// 54 real tasks were sitting in this category, unviewable, before the reset.
+function renderSomeday() {
+  const v2 = document.getElementById('v2Content');
+  if (!v2) return;
+
+  const somedayTasks = tasks.filter(t => t.cat === 'someday');
+  let html = sectionLabel('Someday');
+
+  if (somedayTasks.length === 0) {
+    html += `<div class="v2-empty" style="margin-top:24px;">
+      <div class="v2-empty-icon">🌙</div>
+      <div class="v2-empty-text">Nothing in Someday. Backlog items not scheduled to a specific week go here.</div>
+    </div>`;
+  } else {
+    somedayTasks.forEach(t => {
+      let badgeClass = 'pl';
+      let badgeText = 'Low';
+      if (t.priority === 'high') { badgeClass = 'ph'; badgeText = 'High'; }
+      if (t.priority === 'medium') { badgeClass = 'pm'; badgeText = 'Medium'; }
+      html += `
+      <div class="v2-task-row ${t.done ? 'done' : ''}" data-id="${t.id}" onclick="openTaskDetail('${t.id}')">
+        <div class="v2-task-check ${t.done ? 'checked' : ''}" onclick="event.stopPropagation(); toggleTask('${t.id}')"></div>
+        <div class="v2-task-content" style="flex: 1;">
+          <div class="v2-task-text" style="margin-bottom: 2px;">${esc(t.text)}</div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
+            <div class="badge ${badgeClass}">${badgeText}</div>
+          </div>
+        </div>
+      </div>`;
+    });
+  }
+
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  v2.replaceChildren(...doc.body.childNodes);
+}
+
+// ===================== NEW ARCHITECTURE: RIGHT NOW / PLAN / LOG / LATER =====================
+// These four screens replace the old 25-tab / 4-section nav (Tasks/Ops/CRM/Analytics).
+// Each reuses the existing, already-working render functions rather than duplicating
+// their logic — composition happens by calling the proven function first (it writes
+// straight into #v2Content) and then prepending new content via safe DOM insertion,
+// never by re-implementing task filtering/rendering from scratch.
+
+function renderRightNow() {
+  // Today's proven task list, stats, and quick-log shortcuts stay exactly as they were.
+  renderToday();
+  const v2 = document.getElementById('v2Content');
+  if (!v2) return;
+
+  let extraHtml = '';
+
+  // Outreach quota — the one thing the old nav never surfaced at a glance.
+  const today = todayStr();
+  const todayLog = (typeof outreach_logs !== 'undefined' ? outreach_logs : []).find(l => l.date === today) || { messages_sent: 0 };
+  const sent = todayLog.messages_sent || 0;
+  const target = 25;
+  const pct = Math.min(100, Math.round((sent / target) * 100));
+  const quotaColor = pct >= 100 ? 'var(--green-400)' : (pct >= 50 ? 'var(--amber-400)' : 'var(--text-dim)');
+  extraHtml += `
+    <div class="v2-card accent-left" style="padding:16px; margin-bottom:20px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <div style="font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.5px;">Today's Outreach</div>
+        <button onclick="openLogOutreachModal()" style="background:none; border:none; color:var(--accent); font-size:12px; font-weight:600; cursor:pointer;">Log</button>
+      </div>
+      <div style="font-size:22px; font-weight:800; color:${quotaColor};">${sent} <span style="font-size:13px; font-weight:500; color:var(--text-dim);">/ ${target} messages</span></div>
+      <div style="height:6px; background:rgba(255,255,255,0.05); border-radius:10px; overflow:hidden; margin-top:8px;">
+        <div style="width:${pct}%; height:100%; background:${quotaColor};"></div>
+      </div>
+    </div>`;
+
+  // Condensed habits checklist — the full Habits screen still exists via Log's quick link.
+  const habits = tasks.filter(t => t.cat === 'daily-habits');
+  if (habits.length > 0) {
+    const doneCount = habits.filter(t => t.done).length;
+    extraHtml += `<div style="font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">Daily Habits (${doneCount}/${habits.length})</div>`;
+    extraHtml += `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:24px;">`;
+    habits.forEach(t => {
+      const doneStyle = t.done
+        ? 'background:var(--green-400); color:#fff; border-color:transparent; text-decoration:line-through; opacity:0.7;'
+        : 'background:var(--card); color:var(--text);';
+      extraHtml += `<div onclick="toggleTask('${t.id}')" style="padding:6px 12px; border-radius:999px; font-size:12px; font-weight:500; cursor:pointer; border:1px solid var(--border); ${doneStyle}">${esc(t.text)}</div>`;
+    });
+    extraHtml += `</div>`;
+  }
+
+  const doc = new DOMParser().parseFromString(extraHtml, 'text/html');
+  Array.from(doc.body.childNodes).reverse().forEach(node => v2.insertBefore(node, v2.firstChild));
+}
+
+function renderPlanScreen() {
+  // This Week already renders the OKR "ONE THING" card at its top — reuse it whole,
+  // then prepend a condensed Milestones "next up" card above that.
+  renderThisWeek();
+  const v2 = document.getElementById('v2Content');
+  if (!v2) return;
+
+  const active = milestones.filter(m => !m.achieved_date).sort((a, b) => a.target_date.localeCompare(b.target_date));
+  const nextUp = active.length > 0 ? active[0] : null;
+
+  let extraHtml = '';
+  if (nextUp) {
+    const pct = Math.min(100, Math.round((nextUp.current_value / nextUp.target_value) * 100)) || 0;
+    extraHtml += `
+      ${sectionLabel('Next Major Milestone')}
+      <div class="v2-card accent-left" style="padding:20px; margin-bottom:24px; border-left-color:var(--amber-400);">
+        <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+          <span style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase;">${nextUp.category}</span>
+          <span style="font-size:11px; font-weight:700; color:var(--amber-400);">Target: ${nextUp.target_date}</span>
+        </div>
+        <div style="font-size:18px; font-weight:800; margin-bottom:12px;">${esc(nextUp.title)}</div>
+        <div style="height:6px; background:rgba(255,255,255,0.05); border-radius:10px; overflow:hidden; margin-bottom:8px;">
+          <div style="width:${pct}%; height:100%; background:var(--amber-400);"></div>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px;">
+          <span style="font-weight:600; color:var(--amber-400);">${pct}% (${nextUp.current_value} / ${nextUp.target_value} ${nextUp.unit})</span>
+          <button onclick="updateMilestoneProgress('${nextUp.id}')" style="background:transparent; border:1px solid rgba(255,255,255,0.1); color:var(--text); padding:4px 8px; border-radius:4px; cursor:pointer;">Update</button>
+        </div>
+      </div>`;
+  } else {
+    extraHtml += `
+      ${sectionLabel('Milestones')}
+      <div class="v2-card" style="padding:16px; margin-bottom:24px; text-align:center;">
+        <div style="font-size:13px; color:var(--text-dim); margin-bottom:12px;">No milestones tracked yet.</div>
+        <button onclick="seedDefaultMilestones()" class="v2-button-teal" style="padding:8px 16px;">Seed Default Milestones</button>
+      </div>`;
+  }
+
+  const doc = new DOMParser().parseFromString(extraHtml, 'text/html');
+  Array.from(doc.body.childNodes).reverse().forEach(node => v2.insertBefore(node, v2.firstChild));
+}
+
+function renderLogScreen() {
+  // Inbox is the actual daily-use content; Recurring/Done are quick links, not fused
+  // inline, since they're edit/archive screens, not something read every day.
+  renderInbox();
+  const v2 = document.getElementById('v2Content');
+  if (!v2) return;
+
+  const doneCount = tasks.filter(t => t.done).length;
+  const linksHtml = `
+    <div style="display:flex; gap:8px; margin-bottom:20px;">
+      <button onclick="jumpToLater('recurring')" style="flex:1; padding:10px 8px; background:var(--bg-secondary); border:1px solid var(--border); border-radius:10px; color:var(--text); font-size:12px; font-weight:600; cursor:pointer;">Manage Recurring</button>
+      <button onclick="jumpToLater('done')" style="flex:1; padding:10px 8px; background:var(--bg-secondary); border:1px solid var(--border); border-radius:10px; color:var(--text); font-size:12px; font-weight:600; cursor:pointer;">Done (${doneCount})</button>
+    </div>`;
+
+  const doc = new DOMParser().parseFromString(linksHtml, 'text/html');
+  Array.from(doc.body.childNodes).reverse().forEach(node => v2.insertBefore(node, v2.firstChild));
+}
+
+function renderLaterMenu() {
+  const v2 = document.getElementById('v2Content');
+  if (!v2) return;
+
+  let html = sectionLabel('Later');
+  LATER_ITEMS.forEach(item => {
+    let badge = '';
+    if (item.legacy === 'compliance' && typeof getComplianceOverdueCount === 'function') {
+      const n = getComplianceOverdueCount();
+      if (n > 0) badge = ` <span class="badge ph">${n} overdue</span>`;
+    }
+    html += `
+    <div class="v2-card" style="padding:16px; margin-bottom:8px; cursor:pointer; display:flex; justify-content:space-between; align-items:center;" onclick="openLaterItem('${item.legacy}')">
+      <div>
+        <div style="font-weight:600; font-size:14px;">${item.label}${badge}</div>
+        <div style="font-size:12px; color:var(--text-dim); margin-top:2px;">${item.hint}</div>
+      </div>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+    </div>`;
+  });
+
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  v2.replaceChildren(...doc.body.childNodes);
+}
+
+function renderLaterSubView(legacy) {
+  const fn = LATER_DISPATCH[legacy];
+  if (typeof fn === 'function') fn();
+
+  const v2 = document.getElementById('v2Content');
+  if (!v2) return;
+  const back = document.createElement('div');
+  back.style.cssText = 'display:flex; align-items:center; gap:6px; color:var(--text-dim); font-size:13px; font-weight:600; cursor:pointer; margin-bottom:16px;';
+  back.onclick = () => openLaterItem(null);
+  back.textContent = '← Later';
+  v2.insertBefore(back, v2.firstChild);
+}
+
 // ===================== V2 RECURRING SCREEN =====================
 function calcNextRunDate(rt, fromDateStr = new Date().toISOString().split('T')[0]) {
   if (rt.frequency === 'event-based') return null;
@@ -3076,7 +3444,7 @@ function renderCompliance() {
   let html = `
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
       <h2 style="margin:0; font-size:18px;">Compliance Ops</h2>
-      <button onclick="openCustomComplianceModal()" style="background:var(--teal-400); color:white; border:none; padding:6px 12px; border-radius:12px; font-size:12px; font-weight:600; cursor:pointer;">+ Add Custom</button>
+      <button onclick="openCustomComplianceModal()" style="background:var(--teal-400); color:white; border:none; padding:0 16px; min-height:44px; border-radius:12px; font-size:12px; font-weight:600; cursor:pointer;">+ Add Custom</button>
     </div>
     <div class="metric-cards-row" style="margin-bottom:24px;">
       ${metricCard('Overdue', redCount, redCount > 0 ? 'red' : '')}
@@ -3119,7 +3487,7 @@ function renderCompliance() {
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">Due: ${i.dueDate}</div>
           ${showButton ? 
-            `<button onclick="markComplianceDone('${i.id}')" style="background:rgba(83, 74, 183, 0.1); color:var(--teal-400); border:none; padding:6px 12px; border-radius:6px; font-size:11px; font-weight:600; cursor:pointer;">Mark Done</button>` :
+            `<button onclick="markComplianceDone('${i.id}')" style="background:rgba(1, 43, 255, 0.1); color:var(--teal-400); border:none; padding:14px 16px; min-height:44px; border-radius:6px; font-size:11px; font-weight:600; cursor:pointer;">Mark Done</button>` :
             `<div style="font-size:11px; color:var(--green-400); font-weight:600;">✅ Done</div>`
           }
         </div>
@@ -3265,8 +3633,8 @@ function renderPipeline(filter = 'all') {
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
         <h2 style="margin:0; font-size:18px;">Sales Pipeline</h2>
         <div style="display:flex; gap:8px;">
-          <button onclick="importProspectsFromStagingFile()" class="v2-button-secondary" style="padding:6px 12px; font-size:12px;">Import from Prep</button>
-          <button onclick="openAddProspectModal()" class="v2-button-teal" style="padding:6px 12px; font-size:12px;">+ Prospect</button>
+          <button onclick="importProspectsFromStagingFile()" class="v2-button-secondary" style="padding:0 14px; min-height:44px; font-size:12px;">Import from Prep</button>
+          <button onclick="openAddProspectModal()" class="v2-button-teal" style="padding:0 14px; min-height:44px; font-size:12px;">+ Prospect</button>
         </div>
       </div>
   `;
@@ -3893,50 +4261,7 @@ async function applyBulkAction(type, value) {
   toggleBulkActions(); 
 }
 
-// ===================== V3 DOMAINS, KAVIN, CALENDAR =====================
-const DOMAINS = ['General', 'Product', 'Engineering', 'Sales', 'Marketing', 'Operations', 'Design', 'Finance', 'Legal', 'HR', 'Support', 'Growth'];
-const DOMAIN_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#6366f1', '#a855f7', '#d946ef'];
-
-function renderDomainView() {
-  const tb = document.getElementById('v3Toolbar');
-  if (tb) tb.style.display = 'none';
-
-  let html = `<div class="domains-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:16px;">`;
-  
-  DOMAINS.forEach((dom, i) => {
-    const domTasks = tasks.filter(t => (t.domain || 'General') === dom);
-    const total = domTasks.length;
-    const notStarted = domTasks.filter(t => (t.status || 'not-started') === 'not-started').length;
-    const inProgress = domTasks.filter(t => t.status === 'in-progress').length;
-    const blocked = domTasks.filter(t => t.status === 'blocked').length;
-    
-    html += `
-      <div class="view-card" style="border-left: 4px solid ${DOMAIN_COLORS[i]}; cursor: pointer;" onclick="filterByDomain('${dom}')">
-        <h3 style="margin:0 0 4px 0;">${dom}</h3>
-        <p style="font-size:24px; font-weight:600; margin:0 0 8px 0;">${total} <span style="font-size:12px;font-weight:normal;color:var(--text-light);">tasks</span></p>
-        <div style="font-size:12px; color:var(--text-light); display:flex; gap:8px;">
-          <span>○ ${notStarted}</span>
-          <span style="color:#3b82f6;">◑ ${inProgress}</span>
-          <span style="color:#ef4444;">⊗ ${blocked}</span>
-        </div>
-      </div>
-    `;
-  });
-  html += `</div>`;
-  document.getElementById('taskList').innerHTML = html;
-}
-
-function filterByDomain(dom) {
-  switchTab('Inbox');
-  const searchInput = document.getElementById('searchInput');
-  if (searchInput) searchInput.value = dom;
-  searchTasks(dom);
-}
-
-function renderKavinView() {
-  renderTasks();
-}
-
+// ===================== V3 CALENDAR =====================
 let currentCalendarDate = new Date();
 
 function renderCalendarView() {
@@ -4039,8 +4364,6 @@ function renderTasks() {
     );
   } else if (activeTab === 'done') {
     filtered = tasks.filter(t => t.done);
-  } else if (activeTab === 'kavin') {
-    filtered = tasks.filter(t => (t.owner === 'Kavin' || t.owner === 'Both') && !t.done);
   } else {
     filtered = tasks.filter(t => t.cat === activeTab && !t.done);
   }
@@ -4332,7 +4655,6 @@ function renderHistory(el) {
 // Chart.js instance tracking to prevent canvas reuse errors
 let historyChartInst = null;
 let velocityChartInst = null;
-let domainsChartInst = null;
 let workloadChartInst = null;
 
 // ===================== V2 HISTORY SCREEN =====================
@@ -4683,86 +5005,6 @@ function renderVelocity() {
           scales: {
             y: { beginAtZero: true, ticks: { color: 'rgba(255,255,255,0.3)', stepSize: 1 }, grid: { color: 'rgba(255,255,255,0.05)' } },
             x: { ticks: { color: 'rgba(255,255,255,0.3)' }, grid: { display: false } }
-          }
-        }
-      });
-    }
-  }
-}
-
-// ===================== V2 DOMAINS SCREEN =====================
-function renderDomains() {
-  const v2 = document.getElementById('v2Content');
-  if (!v2) return;
-
-  const catMap = {};
-  tasks.forEach(t => {
-    const cat = t.cat || 'uncategorized';
-    if (!catMap[cat]) catMap[cat] = { active: 0, done: 0 };
-    if (t.done) catMap[cat].done++;
-    else catMap[cat].active++;
-  });
-
-  const categories = Object.keys(catMap).sort((a, b) => (catMap[b].active + catMap[b].done) - (catMap[a].active + catMap[a].done));
-  const chartColors = ['#534AB7', '#34D399', '#FBBF24', '#F87171', '#60A5FA', '#A78BFA', '#F472B6', '#818CF8'];
-
-  let html = `<div style="padding:0 16px 100px;">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-      <h2 style="font-size:20px; font-weight:800; margin:0;">Task Domains</h2>
-    </div>
-
-    <div style="background:var(--bg-secondary); border-radius:14px; padding:16px; margin-bottom:20px; border:1px solid rgba(255,255,255,0.04);">
-      <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; margin-bottom:12px;">Category Distribution</div>
-      <div style="max-width:220px; margin:0 auto;">
-        <canvas id="domainsChart" height="220"></canvas>
-      </div>
-    </div>
-
-    <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; margin-bottom:12px;">Breakdown</div>`;
-
-  categories.forEach((cat, i) => {
-    const d = catMap[cat];
-    const total = d.active + d.done;
-    const pct = total > 0 ? Math.round(d.done / total * 100) : 0;
-    const label = catLabels[cat] || cat;
-    const color = chartColors[i % chartColors.length];
-
-    html += `<div style="background:var(--bg-secondary); border-radius:10px; padding:12px 14px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; border:1px solid rgba(255,255,255,0.04);">
-      <div style="display:flex; align-items:center; gap:10px;">
-        <div style="width:10px; height:10px; border-radius:3px; background:${color};"></div>
-        <span style="font-size:13px; font-weight:600;">${label}</span>
-      </div>
-      <div style="display:flex; align-items:center; gap:12px;">
-        <span style="font-size:12px; color:var(--text-muted);">${d.active} active</span>
-        <span style="font-size:12px; color:var(--green-400);">${d.done} done</span>
-        <span style="font-size:12px; font-weight:700; color:var(--accent);">${pct}%</span>
-      </div>
-    </div>`;
-  });
-
-  html += `</div>`;
-  v2.innerHTML = html;
-
-  if (categories.length > 0) {
-    const ctx = document.getElementById('domainsChart');
-    if (ctx) {
-      if (domainsChartInst) domainsChartInst.destroy();
-      domainsChartInst = new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-          labels: categories.map(c => catLabels[c] || c),
-          datasets: [{
-            data: categories.map(c => catMap[c].active + catMap[c].done),
-            backgroundColor: categories.map((_, i) => chartColors[i % chartColors.length]),
-            borderWidth: 0,
-            hoverOffset: 6
-          }]
-        },
-        options: {
-          responsive: true,
-          cutout: '65%',
-          plugins: {
-            legend: { display: false }
           }
         }
       });
@@ -5695,6 +5937,25 @@ async function copyEveningCheckinApi() {
   navigator.clipboard.writeText(cmd).then(() => showSyncStatus('eveningCheckinStatus'));
 }
 
+async function refreshAndCopyToken() {
+  if (!sb || !currentUser) return;
+  const { data: { session } } = await sb.auth.refreshSession();
+  if (!session) { showToast('Sign in first to refresh a session token.', 'error'); return; }
+  await navigator.clipboard.writeText(session.access_token);
+  const expiryEl = document.getElementById('tokenExpiry');
+  if (expiryEl) expiryEl.textContent = `Token valid until ${new Date(session.expires_at * 1000).toLocaleTimeString()}`;
+  showSyncStatus('tokenRefreshStatus');
+}
+
+function saveEmailFallback() {
+  const input = document.getElementById('emailFallbackInput');
+  if (!input) return;
+  const email = input.value.trim();
+  if (email && !isValidEmail(email)) { showToast('Enter a valid email address.', 'error'); return; }
+  localStorage.setItem('EMAIL_FALLBACK', email);
+  showSyncStatus('saveEmailStatus');
+}
+
 async function forceSyncNow() {
   if (!currentUser || !sb) return;
   await syncFromSupabase();
@@ -5972,30 +6233,6 @@ function editTask(e, id) {
 }
 
 function closeModal() { document.getElementById('modal').classList.remove('open'); editingId = null; }
-
-function openQuickCaptureModal() {
-  document.getElementById('quickCaptureModal').classList.add('open');
-  setTimeout(() => document.getElementById('quickCaptureInput').focus(), 50);
-}
-
-function closeQuickCaptureModal() {
-  document.getElementById('quickCaptureModal').classList.remove('open');
-  document.getElementById('quickCaptureInput').value = '';
-}
-
-function saveQuickCapture() {
-  const text = document.getElementById('quickCaptureInput').value.trim();
-  if (!text) return;
-  const t = {
-    id: uuidv4(), text, cat: 'inbox', priority: 'medium', done: false,
-    notes: '', daily: false, subtasks: [], streak: 0, lastStreakDate: null, reminderTime: null,
-    domain: 'General', dueDate: null, status: 'not-started', phase: null, owner: 'Ladson', dependencies: [], okrId: null,
-    updatedAt: new Date().toISOString()
-  };
-  tasks.push(t);
-  pushTaskToSupabase(t);
-  save(); closeQuickCaptureModal(); renderTopTabs(); renderScreen(); updateProgress();
-}
 
 function saveTask() {
   const text = document.getElementById('taskInput').value.trim();
@@ -6637,7 +6874,7 @@ async function sendEmailReminder(text, time) {
 
 // ===================== QUICK CAPTURE =====================
 function quickAdd() {
-  const input = document.getElementById('quickCaptureInput');
+  const input = document.getElementById('quickCaptureInputLegacy');
   const text = input.value.trim();
   if (!text) return;
   const cat = activeTab;
@@ -6986,6 +7223,7 @@ function renderSync() {
       <input type="email" id="emailFallbackInput" placeholder="Enter your email" value="${esc(emailFallback)}" 
         style="width:100%; padding:8px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:13px; margin-bottom:8px;">
       <button class="sync-btn tertiary" onclick="saveEmailFallback()">Save Email Setting</button>
+      <div id="saveEmailStatus" class="sync-status">Email saved!</div>
     </div>
     <div class="sync-card">
       <h3>Active Task Reminders</h3>
@@ -7710,7 +7948,6 @@ if ('serviceWorker' in navigator) {
 document.addEventListener('keydown', function(e) {
   if (e.key !== 'Escape') return;
   const modalMap = [
-    { id: 'quickCaptureModal', fn: () => typeof closeQuickCaptureModal === 'function' && closeQuickCaptureModal() },
     { id: 'modal', fn: () => typeof closeModal === 'function' && closeModal() },
     { id: 'reviewModal', fn: () => typeof closeReviewModal === 'function' && closeReviewModal() },
     { id: 'decisionModal', fn: () => typeof closeDecisionModal === 'function' && closeDecisionModal() },
